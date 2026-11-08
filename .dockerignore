@@ -1,0 +1,28 @@
+.git
+.gitignore
+node_modules
+.next
+out
+data
+reports
+coverage
+.env
+.env.*
+*.pem
+*.tsbuildinfo
+npm-debug.log*
+Dockerfile.md
+tests
+terminals
+**/.DS_Store
+
+# Maintenance docs, backups and archives are not needed at build time.
+# The expanded next.config.ts under deployment-backups used to be copied in
+# and was picked up by tsconfig's include: **/*.ts.
+deployment-backups/
+*.tar.gz
+docs/
+AGENTS.md
+*.md.bak
+snapshots/
+.workbuddy/
