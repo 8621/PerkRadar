@@ -39,6 +39,8 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   const [personalReady, setPersonalReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [pollError, setPollError] = useState(false);
 
   useEffect(() => {
     setBoard(initial);
@@ -47,6 +49,14 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   useEffect(() => {
     setPersonal(loadPersonal());
     setPersonalReady(true);
+    // Another tab may have changed favorites/claimed while this one was open.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== STORAGE_KEY) return;
+      setPersonal(loadPersonal());
+      setPersonalReady(true);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   useEffect(() => {
@@ -61,11 +71,16 @@ export function DealBoard({ initial }: { initial: BoardState }) {
         const response = await fetch("/api/deals", { cache: "no-store" });
         if (response.ok) {
           const data = (await response.json()) as BoardState;
-          if (!cancelled) setBoard(data);
+          if (!cancelled) {
+            setBoard(data);
+            setPollError(false);
+          }
           if (data.lastUpdatedAt && !data.refreshInProgress) return;
+        } else if (!cancelled) {
+          setPollError(true);
         }
       } catch {
-        // Keep the empty or previous board visible.
+        if (!cancelled) setPollError(true);
       }
       if (!cancelled) timer = setTimeout(tick, 2000);
     };
@@ -77,15 +92,23 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   }, [initial]);
 
   function savePersonal(next: Personal) {
-    setPersonal(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      setStorageError(null);
+      setPersonal(next);
+    } catch {
+      // State and storage must not silently diverge in private mode or when quota is full.
+      setStorageError("收藏和已领没能写入这台浏览器（可能是隐私模式或存储已满），本次改动只在当前页面有效。");
+    }
   }
 
   function toggle(list: "claimed" | "favorites", canonicalUrl: string) {
-    const current = new Set(personal[list]);
+    // Re-read storage so a stale in-memory copy cannot overwrite another tab's change.
+    const latest = loadPersonal();
+    const current = new Set(latest[list]);
     if (current.has(canonicalUrl)) current.delete(canonicalUrl);
     else current.add(canonicalUrl);
-    savePersonal({ ...personal, [list]: [...current] });
+    savePersonal({ ...latest, [list]: [...current] });
   }
 
   async function refresh() {
@@ -118,14 +141,14 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-20 border-b border-[#e4ddd2] bg-[#f6f3ee]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1360px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 lg:px-6">
+        <div className="mx-auto flex max-w-[1360px] flex-col gap-2 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2 lg:px-6">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-tight text-[#1c2118] sm:text-xl">PerkRadar</h1>
             <p className="text-xs text-[#6d675e]">多来源优惠线索聚合 · 收藏和已领只在这台浏览器</p>
           </div>
           <div
             data-testid="stats"
-            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm"
             aria-live="polite"
           >
             <Status
@@ -133,10 +156,10 @@ export function DealBoard({ initial }: { initial: BoardState }) {
               value={board.lastUpdatedLabel ? `${board.lastUpdatedLabel} 北京时间` : "尚未更新"}
             />
             <Status label="来源" value={`${board.sourceHealth.ok}/${board.sourceHealth.total}`} />
-            <Status label="在架" value={String(board.activeCount)} />
+            <Status label="已收录" value={String(board.activeCount)} />
             <Status label="本轮新增" value={String(board.newCount)} />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 sm:ml-auto">
             <Button
               type="button"
               data-testid="refresh"
@@ -149,6 +172,19 @@ export function DealBoard({ initial }: { initial: BoardState }) {
             </Button>
           </div>
         </div>
+        <p className="mx-auto max-w-[1360px] px-4 pt-1 text-xs leading-5 text-[#6d675e] lg:px-6">
+          条目来自公开订阅源，只表示抓到了这条线索；未核实活动是否仍有效、领取条件或能否领取。
+        </p>
+        {pollError ? (
+          <p className="mx-auto max-w-[1360px] px-4 pb-2 text-xs text-[#b42318] lg:px-6" role="status">
+            数据暂时不可用，显示的是上次成功读取的内容；恢复后会自动更新。
+          </p>
+        ) : null}
+        {storageError ? (
+          <p className="mx-auto max-w-[1360px] px-4 pb-2 text-xs text-[#b42318] lg:px-6" role="alert">
+            {storageError}
+          </p>
+        ) : null}
         {board.nextRefreshLabel ? (
           <p className="mx-auto hidden max-w-[1360px] px-4 pb-2 text-xs text-[#6d675e] lg:block lg:px-6">
             下次自动更新 {board.nextRefreshLabel}（北京时间）
@@ -328,9 +364,11 @@ export function DealBoard({ initial }: { initial: BoardState }) {
                 <p className="mx-auto mt-1 max-w-md text-sm text-[#6d675e]">
                   {category === "favorites" && !personalReady
                     ? "正在读取这台浏览器里的收藏。"
-                    : board.deals.length === 0
-                      ? board.lastUpdatedAt
-                        ? "这一轮没有仍在架的条目。失败的来源会在下一轮重试，这里不会填入示例优惠。"
+                    : pollError && board.deals.length === 0
+                      ? "数据暂时不可用，还无法读取条目；恢复后会自动更新，这里不会填入示例优惠。"
+                      : board.deals.length === 0
+                        ? board.lastUpdatedAt
+                          ? "这一轮没有已收录的条目。失败的来源会在下一轮重试，这里不会填入示例优惠。"
                         : "服务端还没有完成抓取。空列表是真实状态，不会填入示例优惠。"
                       : "没有符合当前筛选的条目。"}
                 </p>
@@ -408,8 +446,8 @@ function DealCard({
       {deal.summary ? <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-[#6d675e]">{deal.summary}</p> : null}
       {deal.publishedLabel ? <p className="mt-1 text-xs text-[#8a847b]">发布 {deal.publishedLabel}</p> : null}
       <div className="mt-3 border-t border-[#eee7de] pt-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-auto rounded-full border border-[#e4ddd2] px-2 py-0.5 text-xs text-[#5c564e]">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="mr-auto min-w-0 max-w-full truncate rounded-full border border-[#e4ddd2] px-2 py-0.5 text-xs text-[#5c564e]">
             {deal.sourceName}
           </span>
           <Button
@@ -417,8 +455,8 @@ function DealCard({
             className="h-8 rounded-lg bg-[#3e5634] px-3 text-sm text-[#f7f6f1] hover:bg-[#334a2b]"
           >
             <a href={deal.url} target="_blank" rel="noopener noreferrer">
-              去领取
-              <span className="sr-only">，新标签打开原文</span>
+              打开原文
+              <span className="sr-only">，在新标签打开原文</span>
             </a>
           </Button>
           <button
@@ -447,7 +485,7 @@ function DealCard({
 
 function Status({ label, value }: { label: string; value: string }) {
   return (
-    <p className="whitespace-nowrap">
+    <p className="min-w-0 break-words">
       <span className="text-[#8a847b]">{label}</span>{" "}
       <span className="font-semibold tracking-tight text-[#1c2118]">{value}</span>
     </p>

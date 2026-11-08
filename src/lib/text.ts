@@ -19,13 +19,22 @@ function decodeEntities(input: string): string {
     });
 }
 
-/** Decode entities, drop tags, collapse whitespace. Does not invent text. */
+/** Decode entities, drop tags and terminal noise, collapse whitespace. Does not invent text. */
 export function toPlain(input: string): string {
   const decoded = decodeEntities(input);
   return decoded
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, " ")
+    // Some feeds strip the ESC byte but leave the SGR sequence behind, e.g. "[1m".
+    .replace(/\[[0-9;]{1,8}m/g, " ")
+    // Same for cursor/screen CSI fragments such as "[H[J[3J" in terminal dumps.
+    // Restrict the final byte to H/J/K so ordinary text like "[3D]" survives.
+    .replace(/\[[0-9;]{0,4}[HJK]/g, " ")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, " ")
+    // Long runs of separator glyphs are ASCII-art padding, not summary content.
+    .replace(/[+*=_~#]{8,}/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

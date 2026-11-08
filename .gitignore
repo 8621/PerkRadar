@@ -59,5 +59,8 @@ next-env.d.ts
 latest.json
 rounds/*.json
 
+# IDE-local launch config; not part of the published project.
+/.mrdayone/
+
 # local agent memory and workspace metadata
 /.workbuddy/

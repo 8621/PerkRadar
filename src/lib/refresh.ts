@@ -22,6 +22,7 @@ import { listSources, loadSource } from "./sources";
 import type { BoardState, ParsedItem } from "./types";
 import { canonicalUrl } from "./url";
 import { getBoardState } from "./board";
+import { classifyFailure, logEvent, logFailure } from "./log";
 import { writeDealSnapshot } from "./snapshot";
 import { releaseRefreshLock, resetRefreshLockForTests, tryAcquireRefreshLock } from "./refresh-lock";
 
@@ -111,7 +112,7 @@ async function fetchAll(options: Required<Pick<RefreshOptions, "now" | "timeoutM
   );
 }
 
-function applySource(loaded: LoadedSource, roundId: number, now: number): void {
+function applySource(loaded: LoadedSource, roundId: number, now: number): number {
   if (!loaded.ok) {
     insertSourceRun({
       roundId,
@@ -124,7 +125,7 @@ function applySource(loaded: LoadedSource, roundId: number, now: number): void {
       startedAt: loaded.startedAt,
       finishedAt: loaded.finishedAt,
     });
-    return;
+    return 0;
   }
 
   let inserted = 0;
@@ -200,6 +201,7 @@ function applySource(loaded: LoadedSource, roundId: number, now: number): void {
     startedAt: loaded.startedAt,
     finishedAt: loaded.finishedAt,
   });
+  return inserted;
 }
 
 function purgeStale(now: number): void {
@@ -244,6 +246,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
     }
     setMeta("last_manual_at", String(now));
   }
+    logEvent("round_start", { trigger: options.trigger, sources: listSources().length });
     const loaded = await fetchAll({
       now,
       timeoutMs: options.timeoutMs ?? SOURCE_TIMEOUT_MS,
@@ -253,28 +256,35 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
     let roundId = 0;
     try {
       roundId = insertRound(options.trigger, now);
-      for (const source of loaded) applySource(source, roundId, now);
+      let totalInserted = 0;
+      for (const source of loaded) totalInserted += applySource(source, roundId, now);
       purgeStale(now);
       const okCount = loaded.filter((source) => source.ok).length;
       const status = okCount === loaded.length ? "success" : okCount === 0 ? "failed" : "partial";
       finishRound(roundId, Date.now(), status);
       commit();
+      logEvent("round_finished", {
+        roundId,
+        trigger: options.trigger,
+        status,
+        okSources: okCount,
+        totalSources: loaded.length,
+        inserted: totalInserted,
+      });
       for (const run of listSourceRuns(roundId)) {
-        console.log(
-          `[deals] ${JSON.stringify({
-            event: "source_round",
-            roundId,
-            sourceId: run.sourceId,
-            ok: run.ok,
-            attemptedAt: new Date(run.startedAt).toISOString(),
-            completedAt: run.finishedAt == null ? null : new Date(run.finishedAt).toISOString(),
-            durationMs: run.finishedAt == null ? null : run.finishedAt - run.startedAt,
-            parsed: run.fetchedCount,
-            inserted: run.insertedCount,
-            finalUrl: run.finalUrl,
-            error: run.error,
-          })}`,
-        );
+        logEvent("source_round", {
+          roundId,
+          sourceId: run.sourceId,
+          ok: run.ok,
+          attemptedAt: new Date(run.startedAt).toISOString(),
+          completedAt: run.finishedAt == null ? null : new Date(run.finishedAt).toISOString(),
+          durationMs: run.finishedAt == null ? null : run.finishedAt - run.startedAt,
+          parsed: run.fetchedCount,
+          inserted: run.insertedCount,
+          finalUrl: run.finalUrl,
+          error: run.error,
+          reason: run.ok ? null : classifyFailure(run.error ?? ""),
+        });
       }
     } catch (error) {
       try {
@@ -282,6 +292,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       } catch {
         // Already rolled back or never opened.
       }
+      logFailure("round_write_failed", error, { trigger: options.trigger });
       throw error;
     }
   } finally {
@@ -291,7 +302,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
   try {
     writeDealSnapshot(board);
   } catch (error) {
-    console.error("[deals] snapshot write failed", error);
+    logFailure("snapshot_write_failed", error);
   }
   return board;
 }

@@ -29,5 +29,9 @@ export const SEVERE_AFTER_MS = 4 * 60 * 60 * 1000;
 
 export const USER_AGENT = "Mozilla/5.0 (compatible; DailyDealsBot/1.0)";
 export const MAX_RESPONSE_CHARS = 1_500_000;
+export const MAX_FEED_ITEMS = 2_000;
+export const MAX_URL_CHARS = 2_048;
+export const FUTURE_PUBLISH_TOLERANCE_MS = 7 * 24 * 60 * 60 * 1000;
+export const MIN_PUBLISH_MS = Date.UTC(2000, 0, 1);
 export const SUMMARY_MAX = 160;
 export const TITLE_MAX = 300;

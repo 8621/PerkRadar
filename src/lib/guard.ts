@@ -15,13 +15,20 @@ export function resetGuards(): void {
   attempts.clear();
 }
 
-export function clientIp(headers: Headers): string {
+export function clientIp(headers: Headers, options?: { trustProxy?: boolean }): string {
+  // 只监听 loopback、前面没有可信代理；转发头由客户端可控，默认一律归到 local，否则可伪造来绕开限流。
+  const trustProxy = options?.trustProxy ?? (process.env.TRUST_PROXY_HEADERS === "1");
+  if (!trustProxy) return "local";
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]?.trim().slice(0, 80) || "unknown";
   return headers.get("x-real-ip")?.slice(0, 80) || "local";
 }
 
 export function assertSameOrigin(headers: Headers): void {
+  // 浏览器会给跨站请求打上 Sec-Fetch-Site，而 curl 排障命令不带它；据此挡住伪装成同源的跨站刷新。
+  if (headers.get("sec-fetch-site") === "cross-site") {
+    throw new GuardError("拒绝跨站刷新", 403);
+  }
   const origin = headers.get("origin");
   if (!origin) return;
   const host = headers.get("x-forwarded-host") || headers.get("host");

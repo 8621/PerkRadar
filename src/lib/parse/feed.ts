@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { FUTURE_PUBLISH_TOLERANCE_MS, MAX_FEED_ITEMS, MIN_PUBLISH_MS } from "../config";
 import { cleanTitle, excerpt } from "../text";
 import type { ParsedItem } from "../types";
 
@@ -45,21 +46,24 @@ function asList(node: unknown): unknown[] {
   return Array.isArray(node) ? node : [node];
 }
 
-function parseTime(value: unknown): number | null {
+function parseTime(value: unknown, now: number): number | null {
   const text = nodeText(value).trim();
   if (!text) return null;
   const ms = Date.parse(text);
-  return Number.isFinite(ms) ? ms : null;
+  if (!Number.isFinite(ms)) return null;
+  // A future or implausible date would pin an item to the top and never expire.
+  if (ms < MIN_PUBLISH_MS || ms > now + FUTURE_PUBLISH_TOLERANCE_MS) return null;
+  return ms;
 }
 
-function itemFromRecord(record: Record<string, unknown>): ParsedItem | null {
+function itemFromRecord(record: Record<string, unknown>, now: number): ParsedItem | null {
   const title = cleanTitle(nodeText(record.title));
   const url = linkHref(record.link);
   if (!title || !url) return null;
   const summarySource =
     nodeText(record.description) || nodeText(record.summary) || nodeText(record.encoded) || nodeText(record.content);
   const publishedAt =
-    parseTime(record.pubDate) ?? parseTime(record.published) ?? parseTime(record.updated) ?? parseTime(record.date);
+    parseTime(record.pubDate, now) ?? parseTime(record.published, now) ?? parseTime(record.updated, now) ?? parseTime(record.date, now);
   return {
     url,
     title,
@@ -70,7 +74,7 @@ function itemFromRecord(record: Record<string, unknown>): ParsedItem | null {
 }
 
 /** Parse RSS 2.0 or Atom. HTML challenge pages fail instead of becoming deals. */
-export function parseFeed(xml: string): ParsedItem[] {
+export function parseFeed(xml: string, now = Date.now()): ParsedItem[] {
   const head = xml.slice(0, 400).toLowerCase();
   if (head.includes("<!doctype html") || /<html[\s>]/.test(head)) {
     throw new Error("返回的是网页而不是订阅源，可能被阻断");
@@ -90,9 +94,10 @@ export function parseFeed(xml: string): ParsedItem[] {
   const records = rssItems ?? atomEntries;
   if (!records) throw new Error("未能解析 RSS/Atom");
   const items: ParsedItem[] = [];
-  for (const record of records) {
+  // A hostile feed can contain unbounded entries; cap work per source.
+  for (const record of records.slice(0, MAX_FEED_ITEMS)) {
     if (!record || typeof record !== "object") continue;
-    const item = itemFromRecord(record as Record<string, unknown>);
+    const item = itemFromRecord(record as Record<string, unknown>, now);
     if (item) items.push(item);
   }
   return items;

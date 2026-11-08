@@ -13,7 +13,7 @@
 - 不逐条核实可领性，不验证价格、额度或资格；标题里的金额、积分、美元是原文用词，程序不换算成现金，也没有价格字段。
 - **除 Epic 的当前免费促销外，没有真实截止时间**。页面上的「近 7 天」是本库的留存规则，不是活动截止日；`到期` 标签只出现在 Epic 条目上。
 - 不把在架条数当成官方确认。综合 RSS/Atom 源里的闲聊、求购、抽奖、推广、条件不明的标题都会进入列表；分类只看标题关键词，会误判（例如抽奖标题可能被分到「免费白嫖」）。
-- 没有简介就留空，不补写；标题最长 300 字、摘要最长 160 字，都来自原文纯文本，不存正文、Cookie 或请求头。
+- 没有简介就留空，不补写；标题最长 300 字、摘要最长 160 字，都来自原文纯文本。清洗会去掉 ANSI/SGR 控制序列（含只剩 `[1m` 这类残留与 `[H[J[3J` 这类裸 CSI 片段）、C0 控制字符和由 `+ * = _ ~ #` 连续 8 个以上组成的分隔线，不存正文、Cookie 或请求头。读库展示时会再做一次同样的幂等清洗，早期已入库的历史行同样生效，不改写现有数据库。
 - 不提供公网服务。默认只监听 `127.0.0.1:38471`。**把源码上传到 GitHub 只代表代码公开，不代表网站已经公网部署。**
 
 ## 来源覆盖
@@ -27,16 +27,22 @@
 | Epic | 静态 JSON，只取当前免费促销 |
 | NodeSeek、小众软件、果核剥壳、异次元软件世界 | RSS / Atom |
 
-综合源按 7 天窗口全量收录；Epic 只收 `start <= now < end`、折扣价为 0 的当前免费促销。同一规范化 URL 只留一行，先写入的来源保留。逐源行为与时间边界见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。
+综合源收录 7 天窗口内的条目，但每源只保留落在本源允许域名（含子域）内的链接：域名不符的条目直接丢弃，并记 `offsite_link_dropped` 日志。Epic 只收 `start <= now < end`、折扣价为 0 的当前免费促销；商品列表为空数组时视为上游异常、该源失败，不会删除库里已有的 Epic 行。同一规范化 URL 只留一行，先写入的来源保留；规范化不统一 `www.` 前缀、http/https 与路径大小写，这是已知边界。逐源行为、允许域名与时间边界见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。
 
-原文链接一律保留。公开可访问不等于可任意再分发：各源使用条件、内容纠错与来源移除渠道见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) 与 [开源发布清单](docs/OPEN_SOURCE_CHECKLIST.md) §2.5。
+原文链接会先校验再保留：超过 2048 字符、含 `user:pass@` 凭证或非 http/https 协议的会被拒绝；发布时间早于 2000-01-01 或晚于当前时刻 +7 天的记为 `null`，留存改用首次收录时间；单个 feed 最多解析 2000 条；响应体累计超过 150 万字符即停止下载并记失败。公开可访问不等于可任意再分发：各源使用条件、内容纠错与来源移除渠道见 [docs/SOURCES.md](docs/SOURCES.md) 与 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。
 
 ## 刷新与时效
 
 - 进程内定时器：启动约 4 秒先抓一轮，之后每 2 小时一轮。不是系统 cron，也不是浏览器计时。
 - **停机就停**：笔记本休眠、Docker 未启动、容器停止或崩溃都会停。没有补轮队列，恢复后只再跑一轮，不会把错过的每一档补齐；重启会立刻重新抓一轮并重排下次时间。
 - 单个来源有 25 秒超时，失败不影响其他来源；失败时不改写该源已有的标题和时间。
-- `/api/health` 返回 `ok: true` 只说明进程能读数据库；**全失败的一轮也会更新「更新时间」**。判断新鲜度要看最近一轮结束时间与逐源成败，见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。目前没有内置的过时告警。
+- `/api/health` 返回 `ok: true` 只说明进程能读数据库；**全失败的一轮也会更新「更新时间」**。判断新鲜度要看最近一轮结束时间与逐源成败，见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。`/api/health` 与页面顶栏会给出新鲜度与异常提示，但程序不会主动发送邮件或聊天通知。
+
+## 页面与本地状态
+
+- 卡片按钮是「打开原文」，顶栏计数是「已收录」。页面持续可见地说明：条目来自公开订阅源，只表示抓到线索，未核实是否仍有效、领取条件或能否领取。
+- 收藏与已领使用 `localStorage` 键 `daily-deals-personal-v1`（`{ claimed, favorites }`，形状不变）；写入失败会有可见提示，并监听 `storage` 事件做跨标签同步。
+- 轮询接口失败时有可见提示，与空库、筛选为空分开显示；三种空状态都不会用假条目填满。
 
 ## 本机怎么打开
 
@@ -53,18 +59,18 @@ curl -sS http://127.0.0.1:38471/api/health
 
 | 文档 | 用途 |
 | --- | --- |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 架构、命令、API、测试、视觉验收 |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 架构、命令、API、结构化日志、测试、视觉验收 |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Docker 启停、排障、备份恢复、回滚 |
-| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | 七个来源、时间边界、什么叫在架、每轮怎么验收 |
+| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | 七个来源与允许域名、时间边界、收录边界、每轮怎么验收 |
 | [docs/SOURCES.md](docs/SOURCES.md) | 来源清单、使用条件核查状态、移除与纠错渠道 |
-| [docs/OPEN_SOURCE_CHECKLIST.md](docs/OPEN_SOURCE_CHECKLIST.md) | 开源发布任务书与验收判据 |
+| [docs/OPEN_SOURCE_CHECKLIST.md](docs/OPEN_SOURCE_CHECKLIST.md) | 开源发布当前状态与验收判据 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、测试约定、新增来源所需证据 |
 | [SECURITY.md](SECURITY.md) | 漏洞报告渠道与部署边界 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 第三方依赖许可声明 |
 | [AGENTS.md](AGENTS.md) | 本地维护 agent 先读什么、什么不能退让 |
 
-这套文档描述当前源码行为。新鲜度与异常提示已实现在 `/api/health` 与页面顶栏，但程序不会主动发送邮件或聊天通知。
+这套文档描述当前源码行为。以下边界仍然存在：不提供公网服务，**上传 GitHub ≠ 已部署**；停机不补轮、只有单实例的进程内锁；除 Epic 的当前免费促销外没有真实截止时间；新鲜度与异常只在 `/api/health` 与页面顶栏提示，程序不会主动发送通知；公开快照在本机 Compose 默认关闭；收藏与已领只在这台浏览器。
 
 ## 许可证
 

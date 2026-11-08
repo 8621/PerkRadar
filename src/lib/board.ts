@@ -8,6 +8,7 @@ import {
   recoverDanglingRounds,
 } from "./db";
 import { isExpiringSoon, isStale } from "./retention";
+import { toPlain } from "./text";
 import { isRefreshRunning } from "./refresh-lock";
 import { SOURCE_DEFS, sourceName } from "./source-defs";
 import { formatBeijing } from "./time";
@@ -39,8 +40,11 @@ export function getBoardState(now = Date.now()): BoardState {
     id: deal.id,
     url: deal.url,
     canonicalUrl: deal.canonicalUrl,
-    title: deal.title,
-    summary: deal.summary,
+    // Rows written before the noise rules existed stay dirty until their source
+    // re-lists them, which can outlast the 7-day window. Re-clean on read instead
+    // of rewriting the user's database; toPlain is idempotent.
+    title: toPlain(deal.title),
+    summary: toPlain(deal.summary),
     category: asCategory(deal.category),
     sourceId: deal.sourceId,
     sourceName: sourceName(deal.sourceId),

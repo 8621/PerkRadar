@@ -54,6 +54,9 @@ export function parseEpicFreeGames(payload: unknown, now: number): ParsedItem[] 
   const elements = (payload as { data?: { Catalog?: { searchStore?: { elements?: unknown } } } })?.data
     ?.Catalog?.searchStore?.elements;
   if (!Array.isArray(elements)) throw new Error("Epic 响应缺少商品列表");
+  // An empty catalog means the upstream response broke, not "no free games".
+  // Returning [] here would make refresh delete every stored Epic row.
+  if (elements.length === 0) throw new Error("Epic 商品列表为空");
 
   const items: ParsedItem[] = [];
   const seen = new Set<string>();

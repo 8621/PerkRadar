@@ -113,7 +113,9 @@ describe("data quality negative cases", () => {
   it("allows an empty result instead of padding the board with ordinary posts", () => {
     const emptyFeed = '<?xml version="1.0"?><rss version="2.0"><channel><title>empty</title></channel></rss>';
     assert.deepEqual(parseFeed(emptyFeed), []);
-    assert.deepEqual(parseEpicFreeGames(catalog([]), NOW), []);
+    // An empty catalog is an upstream anomaly, not a legitimate empty result:
+    // accepting it would make refresh delete every stored Epic row.
+    assert.throws(() => parseEpicFreeGames(catalog([]), NOW), /商品列表为空/);
     assert.deepEqual(
       parseEpicFreeGames(catalog([epicElement({ current: [], upcoming: [offer(HOUR, 48 * HOUR)] })]), NOW),
       [],

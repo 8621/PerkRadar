@@ -23,6 +23,12 @@ deployment-backups/
 *.tar.gz
 docs/
 AGENTS.md
+# A separate workspace session writes design mockups here; they are not part of
+# PerkRadar and must not create a /demo route in the production image.
+src/app/demo/
+.mrdayone/
+*.md
 *.md.bak
+scripts/
 snapshots/
 .workbuddy/

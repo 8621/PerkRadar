@@ -4,23 +4,23 @@
 
 ## 来源清单
 
-URL 写死在 `src/lib/source-defs.ts`，调用方不能替换。
+URL 写死在 `src/lib/source-defs.ts`，调用方不能替换。每个来源另有一份允许域名（含子域）；条目链接不在本源允许域名内会被丢弃，不入库、不展示，并记 `offsite_link_dropped` 日志。
 
-| id | 名称 | 请求 URL | 格式 | 收录规则 | 到期时间 |
-| --- | --- | --- | --- | --- | --- |
-| `linuxdo` | LINUX DO 福利羊毛 | `https://r.jina.ai/https://linux.do/c/welfare/36.rss` | 经 Jina 转换的 Markdown | 拆出 `### [标题](.../t/topic/<数字>)` 与 RFC822 日期；解析不到整源失败 | 无 |
-| `v2ex` | V2EX 推广 | `https://www.v2ex.com/feed/promotions.xml` | Atom | feed 条目，链接去 `#reply0` | 无 |
-| `epic` | Epic | `https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=zh-CN&country=CN&allowCountries=CN` | JSON | 仅 `start <= now < end` 且折扣价为 0 的当前促销 | 促销结束时间 |
-| `nodeseek` | NodeSeek | `https://rss.nodeseek.com/` | RSS/Atom | feed 条目 | 无 |
-| `appinn` | 小众软件 | `https://www.appinn.com/feed/` | RSS/Atom | feed 条目 | 无 |
-| `ghxi` | 果核剥壳 | `https://www.ghxi.com/feed` | RSS/Atom | feed 条目 | 无 |
-| `iplaysoft` | 异次元软件世界 | `https://www.iplaysoft.com/feed` | RSS/Atom | 请求会 301，跟随到最终地址 | 无 |
+| id | 名称 | 请求 URL | 允许域名 | 格式 | 收录规则 | 到期时间 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `linuxdo` | LINUX DO 福利羊毛 | `https://r.jina.ai/https://linux.do/c/welfare/36.rss` | `linux.do` | 经 Jina 转换的 Markdown | 拆出 `### [标题](.../t/topic/<数字>)` 与 RFC822 日期；解析不到整源失败 | 无 |
+| `v2ex` | V2EX 推广 | `https://www.v2ex.com/feed/promotions.xml` | `v2ex.com` | Atom | feed 条目，链接去 `#reply0` | 无 |
+| `epic` | Epic | `https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=zh-CN&country=CN&allowCountries=CN` | `store.epicgames.com` | JSON | 仅 `start <= now < end` 且折扣价为 0 的当前促销；商品列表为空数组视为上游异常、该源失败 | 促销结束时间 |
+| `nodeseek` | NodeSeek | `https://rss.nodeseek.com/` | `nodeseek.com` | RSS/Atom | feed 条目 | 无 |
+| `appinn` | 小众软件 | `https://www.appinn.com/feed/` | `appinn.com` | RSS/Atom | feed 条目 | 无 |
+| `ghxi` | 果核剥壳 | `https://www.ghxi.com/feed` | `ghxi.com` | RSS/Atom | feed 条目 | 无 |
+| `iplaysoft` | 异次元软件世界 | `https://www.iplaysoft.com/feed` | `iplaysoft.com` | RSS/Atom | 请求会 301，跟随到最终地址 | 无 |
 
-综合源按 7 天窗口全量收录，包含闲聊、求购、抽奖与软件新闻；它们只是线索，不是已核实的优惠。分类规则、时间边界与每轮验收见 [DATA_QUALITY.md](DATA_QUALITY.md)。
+综合源收录落在 7 天窗口、且链接在本源允许域名内的条目，包含闲聊、求购、抽奖与软件新闻；它们只是线索，不是已核实的优惠。发布时间早于 2000-01-01 或晚于当前时刻 +7 天视为无效（`published_at` 为 `null`，留存改用 `first_seen_at`），单个 feed 最多解析前 2000 条。分类规则、时间边界与每轮验收见 [DATA_QUALITY.md](DATA_QUALITY.md)。
 
 ## 只存必要字段
 
-入库字段：标题（≤300 字）、规范化后的原文链接、摘要（≤160 字，没有正文就留空）、来源提供的发布时间、Epic 的促销结束时间、首次收录时间与轮次 id。**不存正文全文、图片、Cookie、请求头、账号、邮箱或凭证**，也不补写来源没有提供的价格或日期。原文链接一律保留，页面「打开原文」指向规范化后的地址。
+入库字段：标题（≤300 字）、规范化后的原文链接、摘要（≤160 字，没有正文就留空）、来源提供的发布时间、Epic 的促销结束时间、首次收录时间与轮次 id。**不存正文全文、图片、Cookie、请求头、账号、邮箱或凭证**，也不补写来源没有提供的价格或日期。原文链接经校验后保留：超过 2048 字符、含 `user:pass@` 凭证、非 http/https 协议或不在本源允许域名内的会被拒绝 / 丢弃；页面「打开原文」指向规范化后的地址。纯文本清洗会去掉 ANSI/SGR 控制序列、C0 控制字符与长分隔线。结构化日志也只记轮次、逐源成败、耗时与失败分类，不含标题正文、Cookie、请求头或个人状态，见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 测试夹具同样遵守这条边界：`tests/fixtures/README.md` 记录来源与采集时间，正文全文已裁剪，且 `tests/` 不进生产镜像。
 

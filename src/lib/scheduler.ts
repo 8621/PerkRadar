@@ -1,5 +1,6 @@
 import { REFRESH_INTERVAL_MS, SCHEDULER_BOOT_DELAY_MS } from "./config";
 import { setMeta } from "./db";
+import { logEvent, logFailure } from "./log";
 import { RefreshRejected, runRefresh, type RefreshOptions } from "./refresh";
 import type { BoardState } from "./types";
 
@@ -25,10 +26,10 @@ async function runScheduled(run: (options: RefreshOptions) => Promise<BoardState
     await run({ trigger: "schedule" });
   } catch (error) {
     if (error instanceof RefreshRejected && error.code === "BUSY") {
-      console.log("[deals] scheduled refresh skipped because another round is running");
+      logEvent("scheduled_refresh_skipped", { reason: "busy" });
       return;
     }
-    console.error("[deals] scheduled refresh failed", error);
+    logFailure("scheduled_refresh_failed", error);
   }
 }
 

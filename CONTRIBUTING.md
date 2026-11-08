@@ -2,8 +2,8 @@
 
 ## 本地准备
 
-- Node.js 22（`node:sqlite` 是 Node 22 的实验 API）与 npm 10。
-- `npm ci`，然后 `npm test`、`npm run lint`、`npm run build`。
+- Node.js 22（`node:sqlite` 是 Node 22 的实验 API）与 npm 10。`package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22，CI 两个 workflow 固定 Node 22。
+- `npm ci`，然后 `npm test`、`npm run lint`、`npm run build`。测试项数以 `npm test` 输出为准，不写进文档或注释。
 - 本机 Docker 启停见 [docs/OPERATIONS.md](docs/OPERATIONS.md)；默认只监听 `127.0.0.1:38471`。
 
 ## 测试约定
@@ -16,11 +16,12 @@
 ## 新增来源需要提供的证据
 
 1. 来源 URL、格式（RSS 2.0 / Atom / JSON / Markdown）、请求方式，以及跟随重定向后的最终 URL。
-2. 注明采集时间的样本文件，以及覆盖失败形态的反例（阻断页、空 feed、格式变化）。
-3. 该源使用条件 / ToS / robots 的核查结论与核查日期。不把「公开可访问」等同于可任意再分发，见 [docs/SOURCES.md](docs/SOURCES.md)。
-4. 字段映射：标题、链接、发布时间、可选到期时间；说明哪些字段拿不到、程序会留空而不是猜测。
-5. 该源如何区分明确优惠线索与普通帖子。若无法区分，必须明确写出它会把闲聊、求购、抽奖一并收录，并在 README 的已知限制里同步。
-6. 对应的解析器测试、分类测试与留存边界测试。
+2. 该源的允许域名（含子域）：条目链接不在本源域名内会被丢弃，见 `src/lib/source-defs.ts` 的 `allowedHosts`。
+3. 注明采集时间的样本文件，以及覆盖失败形态的反例（阻断页、空 feed、格式变化、Epic 空商品列表、跨域名条目链接）。
+4. 该源使用条件 / ToS / robots 的核查结论与核查日期。不把「公开可访问」等同于可任意再分发，见 [docs/SOURCES.md](docs/SOURCES.md)。
+5. 字段映射：标题、链接、发布时间、可选到期时间；说明哪些字段拿不到、程序会留空而不是猜测。链接须满足 http/https、长度不超过 2048 字符、不含 `user:pass@` 凭证；发布时间早于 2000-01-01 或晚于当前时刻 +7 天会被记为 `null`。
+6. 该源如何区分明确优惠线索与普通帖子。若无法区分，必须明确写出它会把闲聊、求购、抽奖一并收录，并在 README 的已知限制里同步。
+7. 对应的解析器测试、分类测试与留存边界测试。
 
 来源 URL 写死在 `src/lib/source-defs.ts`，调用方不能替换。LINUX DO 必须走现有 Jina 地址，不要改成直连或绕过站点挑战；V2EX 必须用复数 `promotions.xml`。
 
@@ -29,9 +30,10 @@
 1. 先看 `/api/health` 与页面，记下改之前的来源成功数、最后更新时间。
 2. 改代码，把预期写进 `tests/`。
 3. 依次跑 `npm test` → `npm run lint` → `npm run build`；动到页面还要在 1440 / 1280 / 390 宽度下看真实数据。
-4. 生产依赖有变动时重跑 `npm audit --omit=dev --registry=https://registry.npmjs.org`。
-5. 需要更新容器时用 `docker compose -p daily-free-info up -d --build`，只操作本项目。
+4. 生产依赖有变动时重跑 `npm audit --omit=dev --registry=https://registry.npmjs.org`。本机默认 npm 镜像不支持 audit 端点，本地复查要手动加 `--registry=https://registry.npmjs.org`；CI 已显式指定官方 registry。
+5. 抓取、解析或接口逻辑有变动时，结构化日志沿用 `[deals] {...}` 前缀与事件字段（见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)），失败用 stderr、成功用 stdout，不写标题正文、Cookie、请求头或个人状态。
+6. 需要更新容器时用 `docker compose -p daily-free-info up -d --build`，只操作本项目。
 
 ## 不可退让
 
-不把没抓到的写成抓到、不把测试夹具写进 `./data`、不把闲聊或抽奖说成已核实可领、不改数据库表结构与 `daily-deals-personal-v1` 的形状、不删除用户数据、不把现有端口直接暴露到公网。没跑过的检查不要写成已通过。
+不把没抓到的写成抓到、不把测试夹具写进 `./data`、不把闲聊或抽奖说成已核实可领、不改数据库表结构与 `daily-deals-personal-v1` 的形状、不删除用户数据、不把现有端口直接暴露到公网。`TRUST_PROXY_HEADERS=1` 只在确有可信反向代理时开启。结构化日志不写标题正文、Cookie、请求头或个人状态。没跑过的检查不要写成已通过。

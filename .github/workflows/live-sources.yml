@@ -5,7 +5,11 @@ name: Live sources
 on:
   workflow_dispatch:
   schedule:
+    # GitHub Actions cron is UTC; 04:23 UTC = 12:23 Beijing time.
     - cron: '23 4 * * *'
+
+permissions:
+  contents: read
 
 jobs:
   probe:

@@ -40,6 +40,26 @@ function epicPayload(titles: { title: string; slug: string; end: string }[]) {
   });
 }
 
+/** A healthy catalog with no current free promotion: the normal "game left" case. */
+function epicPayloadWithoutFreePromotions(): string {
+  return JSON.stringify({
+    data: {
+      Catalog: {
+        searchStore: {
+          elements: [
+            {
+              title: "SYNTHETIC paid game",
+              productSlug: "synthetic-paid",
+              price: { totalPrice: { discountPrice: 999 } },
+              promotions: { promotionalOffers: [] },
+            },
+          ],
+        },
+      },
+    },
+  });
+}
+
 function bodies(overrides: Record<string, string> = {}): Record<string, string> {
   return {
     linuxdo: [
@@ -54,8 +74,8 @@ function bodies(overrides: Record<string, string> = {}): Record<string, string> 
         published: "2026-11-07T00:00:00Z",
       },
       {
-        title: "SYNTHETIC 重复链接",
-        link: "https://linux.do/t/topic/101",
+        title: "SYNTHETIC 优惠码重复链接",
+        link: "https://www.v2ex.com/t/10?utm_source=feed#reply9",
         published: "2026-11-07T00:00:00Z",
       },
     ]),
@@ -194,7 +214,7 @@ describe("refresh", { concurrency: false }, () => {
     const removed = await runRefresh({
       trigger: "schedule",
       now: NOW + 60_000,
-      fetchImpl: fetchFrom(bodies({ epic: epicPayload([]) })),
+      fetchImpl: fetchFrom(bodies({ epic: epicPayloadWithoutFreePromotions() })),
     });
     assert.equal(removed.deals.some((deal) => deal.sourceId === "epic"), false);
 
@@ -210,6 +230,19 @@ describe("refresh", { concurrency: false }, () => {
     });
     assert.equal(failed.deals.some((deal) => deal.sourceId === "epic"), true);
     assert.ok(failed.failures.some((item) => item.sourceId === "epic"));
+  });
+
+  it("treats an empty Epic catalog as a failed source and keeps stored rows", async () => {
+    useMemoryDb();
+    await runRefresh({ trigger: "schedule", now: NOW, fetchImpl: fetchFrom(bodies()) });
+    assert.equal(listDeals().filter((deal) => deal.sourceId === "epic").length, 1);
+    const board = await runRefresh({
+      trigger: "schedule",
+      now: NOW + 60_000,
+      fetchImpl: fetchFrom(bodies({ epic: epicPayload([]) })),
+    });
+    assert.equal(board.deals.filter((deal) => deal.sourceId === "epic").length, 1);
+    assert.ok(board.failures.some((item) => item.sourceId === "epic"));
   });
 
   it("rejects overlapping refresh and manual cooldown, while a schedule may follow", async () => {
