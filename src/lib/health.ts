@@ -1,4 +1,4 @@
-import type { BoardState } from "./types";
+import type { BoardState, FreshnessDTO } from "./types";
 
 export type HealthReport = {
   ok: true;
@@ -11,7 +11,11 @@ export type HealthReport = {
   newCount: number;
   nextRefreshAt: string | null;
   nextRefreshLabelBeijing: string | null;
+  freshness: FreshnessDTO;
+  anomalies: string[];
 };
+
+const NO_ROUND: FreshnessDTO = { lastRoundAgeMs: null, stale: false, severe: false };
 
 /** Small status payload for Docker healthchecks. Deal titles stay on /api/deals. */
 export function toHealthReport(board: BoardState): HealthReport {
@@ -26,5 +30,7 @@ export function toHealthReport(board: BoardState): HealthReport {
     newCount: board.newCount,
     nextRefreshAt: board.nextRefreshAt == null ? null : new Date(board.nextRefreshAt).toISOString(),
     nextRefreshLabelBeijing: board.nextRefreshLabel,
+    freshness: board.freshness ?? NO_ROUND,
+    anomalies: board.anomalies ?? [],
   };
 }

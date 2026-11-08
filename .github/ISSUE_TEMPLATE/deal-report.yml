@@ -1,0 +1,43 @@
+name: 条目错报 / 失效
+description: 报告被误当成优惠的普通帖子、抽奖，或已经失效的线索
+labels: ["data-quality"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本项目是「多来源优惠线索聚合」，不是逐条认证的领取平台。
+        请附原文链接与发现时间，不要粘贴数据库内容、Cookie 或个人信息。
+  - type: input
+    id: url
+    attributes:
+      label: 原文链接
+      description: 卡片上「打开原文」指向的规范化地址
+      placeholder: https://example.com/topic/123
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 问题类型
+      options:
+        - 普通帖子 / 闲聊被当成优惠
+        - 抽奖或条件不明
+        - 活动已经结束
+        - 分类明显错误
+        - 链接打不开或与标题不符
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: 实际看到的内容与期望处理
+      description: 标题、分类、发布时间、到期时间；希望下架、改分类还是仅记录
+    validations:
+      required: true
+  - type: input
+    id: observed_at
+    attributes:
+      label: 发现时间（北京时间）
+      placeholder: 2026-11-08 16:30
+    validations:
+      required: false

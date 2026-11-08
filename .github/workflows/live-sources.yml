@@ -1,0 +1,34 @@
+name: Live sources
+
+# Deliberately NOT part of PR checks. Upstream outages, anti-bot challenges and
+# feed redesigns must not make unrelated pull requests fail.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * *'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Probe live sources into a throwaway database
+        env:
+          # `npm run report` calls runRefresh, which writes to DATA_DIR. Never
+          # point it at a real database or at the repository's ./data.
+          DATA_DIR: ${{ runner.temp }}/perkradar-probe
+          DISABLE_SCHEDULER: '1'
+        run: npm run report
+      - name: Upload probe summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-fetch-summary
+          path: reports/live-fetch-summary.json
+          if-no-files-found: warn

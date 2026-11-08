@@ -1,6 +1,6 @@
 # PerkRadar
 
-> 当前界面仍显示《每日优惠情报》。对外文案与品牌在 `v0.1.0` 发布前统一，运行标识（Compose 项目名、数据卷、收藏键）保持不变，见 [开源发布清单](docs/OPEN_SOURCE_CHECKLIST.md)。
+> 对外品牌统一为 `PerkRadar`。运行标识（Compose 项目名、容器名、数据卷、收藏键、端口）保持不变，避免改名导致本机状态丢失，见 [开源发布清单](docs/OPEN_SOURCE_CHECKLIST.md)。
 
 **这是多来源优惠线索聚合，不是逐条认证的领取平台。**
 
@@ -56,11 +56,15 @@ curl -sS http://127.0.0.1:38471/api/health
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 架构、命令、API、测试、视觉验收 |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Docker 启停、排障、备份恢复、回滚 |
 | [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | 七个来源、时间边界、什么叫在架、每轮怎么验收 |
+| [docs/SOURCES.md](docs/SOURCES.md) | 来源清单、使用条件核查状态、移除与纠错渠道 |
 | [docs/OPEN_SOURCE_CHECKLIST.md](docs/OPEN_SOURCE_CHECKLIST.md) | 开源发布任务书与验收判据 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、测试约定、新增来源所需证据 |
+| [SECURITY.md](SECURITY.md) | 漏洞报告渠道与部署边界 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 第三方依赖许可声明 |
 | [AGENTS.md](AGENTS.md) | 本地维护 agent 先读什么、什么不能退让 |
 
-这套文档描述当前源码行为。写着「建议」的内容还没有做成程序里的告警。
+这套文档描述当前源码行为。新鲜度与异常提示已实现在 `/api/health` 与页面顶栏，但程序不会主动发送邮件或聊天通知。
 
 ## 许可证
 

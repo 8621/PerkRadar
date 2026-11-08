@@ -77,9 +77,13 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
   "activeCount": 0,
   "newCount": 0,
   "nextRefreshAt": null,
-  "nextRefreshLabelBeijing": null
+  "nextRefreshLabelBeijing": null,
+  "freshness": { "lastRoundAgeMs": null, "stale": false, "severe": false },
+  "anomalies": []
 }
 ```
+
+`freshness` 用最近一轮结束时刻计算：超过 2.5 小时 `stale` 为真，超过 4 小时 `severe` 为真。`anomalies` 收录「尚未完成任何一轮」「数据过时」「上一轮全失败」「某源成功但 0 条」「某源解析条数骤降」等文字提示，页面顶栏会显示。每轮结束后还会向 stdout 输出逐源结构化日志（`[deals] {"event":"source_round",...}`），含尝试时间、完成时间、耗时、解析数、收录数、最终 URL 与失败原因。
 
 上面的数字只说明字段形状。`ok: true` 不是数据新鲜，也不是每条可领。`fetchedAt` 来自最近一轮已结束记录的 `finished_at`，这一轮即使全部失败也会更新它。`sourceHealth.ok` 只数这一轮里 `lastOk === true` 的来源。读库抛错时 HTTP 503，主体是 `{ "ok": false, "error": "数据库不可读" }`。
 
@@ -95,6 +99,8 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 - `failures`：这一轮失败来源的 `sourceId`、`sourceName`、`error`。
 - `sources`：固定 7 个来源。`lastOk` 在从未跑过时是 `null`。`lastFetched` 是解析出的条数，`lastInserted` 是这一轮新插入的条数，`lastFinalUrl` 是跟随重定向后的最终 URL。
 - `deals`：当前在架条目。`isNew` 表示它的 `first_seen_round_id` 等于最近一轮已结束的 id。`expiresSoon` 表示到期时刻在 48 小时内且仍晚于现在。`summary` 没有正文时是空字符串。
+- `freshness`：`lastRoundAgeMs`、`stale`（超过 2.5 小时）、`severe`（超过 4 小时）。
+- `anomalies`：数据过时、上一轮全失败、某源成功但 0 条、某源解析条数骤降等文字提示。
 
 ### `POST /api/refresh`
 

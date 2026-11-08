@@ -1,9 +1,10 @@
-import { EXPIRING_SOON_MS } from "./config";
+import { EXPIRING_SOON_MS, SEVERE_AFTER_MS, STALE_AFTER_MS } from "./config";
 import {
   getMeta,
   latestFinishedRound,
   listDeals,
   listSourceRuns,
+  previousSourceRuns,
   recoverDanglingRounds,
 } from "./db";
 import { isExpiringSoon, isStale } from "./retention";
@@ -78,6 +79,33 @@ export function getBoardState(now = Date.now()): BoardState {
   const nextRefreshAt = nextRaw ? Number(nextRaw) : null;
   const lastUpdatedAt = round?.finishedAt ?? null;
 
+  const lastRoundAgeMs = lastUpdatedAt == null ? null : Math.max(0, now - lastUpdatedAt);
+  const stale = lastRoundAgeMs != null && lastRoundAgeMs > STALE_AFTER_MS;
+  const severe = lastRoundAgeMs != null && lastRoundAgeMs > SEVERE_AFTER_MS;
+  const anomalies: string[] = [];
+  if (lastUpdatedAt == null) {
+    anomalies.push("还没有完成任何一轮抓取，页面数据不能当作当前清单");
+  } else if (severe) {
+    anomalies.push("最近一轮已超过 4 小时，页面条目只能当历史抓取");
+  } else if (stale) {
+    anomalies.push("最近一轮已超过 2.5 小时，请先确认容器与刷新状态");
+  }
+  if (round?.status === "failed") anomalies.push("上一轮所有来源都失败");
+
+  const previous = round ? previousSourceRuns(round.id) : [];
+  const previousBySource = new Map(previous.map((run) => [run.sourceId, run]));
+  for (const source of sources) {
+    const before = previousBySource.get(source.id);
+    if (before && before.fetchedCount > 0 && source.lastFetched != null) {
+      const drop = (before.fetchedCount - source.lastFetched) / before.fetchedCount;
+      if (drop >= 0.5) {
+        anomalies.push(`${source.name} 解析条数从 ${before.fetchedCount} 降到 ${source.lastFetched}`);
+      }
+    } else if (source.lastOk === true && source.lastFetched === 0) {
+      anomalies.push(`${source.name} 本轮成功但解析到 0 条`);
+    }
+  }
+
   return {
     generatedAt: now,
     lastUpdatedAt,
@@ -96,6 +124,8 @@ export function getBoardState(now = Date.now()): BoardState {
     failures,
     sources,
     deals,
+    freshness: { lastRoundAgeMs, stale, severe },
+    anomalies,
   };
 }
 

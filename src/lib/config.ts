@@ -23,6 +23,10 @@ export const MANUAL_IP_WINDOW_MS = 10 * 60 * 1000;
 /** A round still marked running after this is treated as interrupted. */
 export const DANGLING_ROUND_MS = 3 * 60 * 1000;
 
+/** Freshness thresholds surfaced by /api/health and the page banner. */
+export const STALE_AFTER_MS = 2.5 * 60 * 60 * 1000;
+export const SEVERE_AFTER_MS = 4 * 60 * 60 * 1000;
+
 export const USER_AGENT = "Mozilla/5.0 (compatible; DailyDealsBot/1.0)";
 export const MAX_RESPONSE_CHARS = 1_500_000;
 export const SUMMARY_MAX = 160;

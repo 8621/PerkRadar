@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "每日优惠情报",
-  description: "服务器每两小时抓取近 7 天的真实优惠，失败来源会标明并在下一轮重试。",
+  title: "PerkRadar · 多来源优惠线索聚合",
+  description: "每两小时聚合七个公开来源的优惠线索，失败来源会标明并在下一轮重试。这是线索聚合，不是逐条认证的领取平台。",
 };
 
 export const viewport: Viewport = {

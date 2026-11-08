@@ -120,8 +120,8 @@ export function DealBoard({ initial }: { initial: BoardState }) {
       <header className="sticky top-0 z-20 border-b border-[#e4ddd2] bg-[#f6f3ee]/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1360px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 lg:px-6">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-tight text-[#1c2118] sm:text-xl">每日优惠情报</h1>
-            <p className="text-xs text-[#6d675e]">近 7 天真实抓取 · 收藏和已领只在这台浏览器</p>
+            <h1 className="text-lg font-semibold tracking-tight text-[#1c2118] sm:text-xl">PerkRadar</h1>
+            <p className="text-xs text-[#6d675e]">多来源优惠线索聚合 · 收藏和已领只在这台浏览器</p>
           </div>
           <div
             data-testid="stats"
@@ -157,6 +157,15 @@ export function DealBoard({ initial }: { initial: BoardState }) {
         {message ? (
           <p className="mx-auto max-w-[1360px] px-4 pb-2 text-xs text-[#b42318] lg:px-6" role="alert">
             {message}
+          </p>
+        ) : null}
+        {board.anomalies && board.anomalies.length > 0 ? (
+          <p
+            data-testid="anomalies"
+            className="mx-auto max-w-[1360px] px-4 pb-2 text-xs text-[#b42318] lg:px-6"
+            role="status"
+          >
+            数据提示：{board.anomalies.join("；")}
           </p>
         ) : null}
         {board.failures.length > 0 ? (

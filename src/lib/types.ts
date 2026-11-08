@@ -51,6 +51,12 @@ export type FailureDTO = {
   error: string;
 };
 
+export type FreshnessDTO = {
+  lastRoundAgeMs: number | null;
+  stale: boolean;
+  severe: boolean;
+};
+
 export type BoardState = {
   generatedAt: number;
   lastUpdatedAt: number | null;
@@ -65,4 +71,7 @@ export type BoardState = {
   failures: FailureDTO[];
   sources: SourceStatus[];
   deals: DealDTO[];
+  /** Optional so callers building a partial board in tests stay compatible. */
+  freshness?: FreshnessDTO;
+  anomalies?: string[];
 };

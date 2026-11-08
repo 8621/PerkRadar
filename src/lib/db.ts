@@ -256,6 +256,15 @@ export function insertSourceRun(input: Omit<SourceRunRow, "id">): void {
     );
 }
 
+/** Runs from the most recent finished round before `roundId`, for anomaly checks. */
+export function previousSourceRuns(roundId: number): SourceRunRow[] {
+  const row = getDb()
+    .prepare("SELECT MAX(id) AS id FROM rounds WHERE status != 'running' AND id < ?")
+    .get(roundId) as Record<string, unknown> | undefined;
+  const id = asNumber(row?.id);
+  return id == null ? [] : listSourceRuns(id);
+}
+
 function mapRound(row: Record<string, unknown>): RoundRow {
   return {
     id: asNumber(row.id) ?? 0,

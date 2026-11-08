@@ -1,0 +1,44 @@
+name: 新增 / 移除来源
+description: 申请接入新来源，或请求移除某个来源及内容
+labels: ["source"]
+body:
+  - type: dropdown
+    id: action
+    attributes:
+      label: 请求类型
+      options:
+        - 新增来源
+        - 移除来源
+        - 更正来源信息
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: 来源 URL
+      placeholder: https://example.com/feed
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 新增来源需提供的证据
+      description: |
+        格式与最终重定向地址；注明采集时间的样本；
+        使用条件 / ToS / robots 核查结论与核查日期；
+        标题、链接、发布时间、到期时间的字段映射；
+        如何区分明确优惠线索与普通帖子；对应的解析与分类测试计划。
+    validations:
+      required: false
+  - type: textarea
+    id: reason
+    attributes:
+      label: 移除或更正的理由
+      description: 来源方要求、条款变化、长期失效，或内容错报的具体依据
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        公开可访问不等于可任意再分发。详见 docs/SOURCES.md 与 CONTRIBUTING.md。
+        涉及许可、隐私或授权问题请走 SECURITY.md 的私密渠道，不要公开贴数据。

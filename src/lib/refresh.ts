@@ -11,6 +11,7 @@ import {
   insertRound,
   insertSourceRun,
   listDeals,
+  listSourceRuns,
   rollback,
   setMeta,
   updateDeal,
@@ -258,6 +259,23 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       const status = okCount === loaded.length ? "success" : okCount === 0 ? "failed" : "partial";
       finishRound(roundId, Date.now(), status);
       commit();
+      for (const run of listSourceRuns(roundId)) {
+        console.log(
+          `[deals] ${JSON.stringify({
+            event: "source_round",
+            roundId,
+            sourceId: run.sourceId,
+            ok: run.ok,
+            attemptedAt: new Date(run.startedAt).toISOString(),
+            completedAt: run.finishedAt == null ? null : new Date(run.finishedAt).toISOString(),
+            durationMs: run.finishedAt == null ? null : run.finishedAt - run.startedAt,
+            parsed: run.fetchedCount,
+            inserted: run.insertedCount,
+            finalUrl: run.finalUrl,
+            error: run.error,
+          })}`,
+        );
+      }
     } catch (error) {
       try {
         rollback();
