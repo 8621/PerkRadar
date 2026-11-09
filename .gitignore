@@ -64,3 +64,6 @@ rounds/*.json
 
 # local agent memory and workspace metadata
 /.workbuddy/
+
+# local API secrets
+.secrets/

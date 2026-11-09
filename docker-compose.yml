@@ -14,10 +14,14 @@ services:
       # Host loopback only. Override the host port with HOST_PORT if 38471 is taken.
       # The process inside the container always listens on 38471.
       - "127.0.0.1:${HOST_PORT:-38471}:38471"
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       PORT: "38471"
       DATA_DIR: /data
+      JINA_API_KEY: ${JINA_API_KEY:-}
     volumes:
       - ./data:/data
     healthcheck:

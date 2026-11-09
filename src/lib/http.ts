@@ -54,6 +54,7 @@ async function readLimitedBody(response: FetchedResponse): Promise<string> {
 export async function fetchText(
   url: string,
   ctx: { fetchImpl: FetchLike; signal: AbortSignal },
+  options?: { headers?: Record<string, string> },
 ): Promise<{ body: string; finalUrl: string; status: number }> {
   const response = await ctx.fetchImpl(url, {
     signal: ctx.signal,
@@ -61,6 +62,7 @@ export async function fetchText(
     headers: {
       "user-agent": USER_AGENT,
       accept: "application/rss+xml, application/atom+xml, application/xml, application/json, text/plain, */*",
+      ...options?.headers,
     },
   });
   // Reject error statuses before downloading their (potentially huge) body.

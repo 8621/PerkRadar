@@ -10,13 +10,13 @@ PerkRadar 是一个本地运行的优惠线索聚合器。它定时读取固定�
 
 - Node.js 22 或更高版本
 - npm
-- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境
+- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境（Compose v2.24 或更高版本）
 
 Node.js 22 是必需条件，因为项目使用了 Node 内置的 `node:sqlite`。依赖版本锁在 `package-lock.json` 中。
 
 ### 用 Docker 运行
 
-这是推荐的本机运行方式。它会构建生产镜像、启动容器，并把 SQLite 数据保存在项目目录的 `./data` 中。
+这是推荐的本机运行方式。它会构建生产镜像、启动容器，并把 SQLite 数据保存在项目目录的 `./data` 中。根目录 `.env` 是可选的；未配置 Jina API Key 时无需创建。需要鉴权时可通过 `JINA_API_KEY` 配置，也可设置 `JINA_API_KEY_FILE` 指向容器内可读取的密钥文件。`.secrets/` 不会复制进镜像，文件方式需要由运行环境单独挂载到容器。
 
 ```bash
 docker compose -p daily-free-info up -d --build
