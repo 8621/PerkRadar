@@ -10,6 +10,8 @@
 | --- | --- |
 | `src/app/page.tsx` | 服务端读库并渲染页面 |
 | `src/components/deal-board.tsx` | 筛选、排序、刷新、收藏和已领 |
+| `src/components/deal-board.css` | 正式页与本地 dev 预览 `/demo` 共用的看板样式 |
+| `src/app/demo/page.tsx` | 7 条示例的设计预览页（1 条「其他」默认隐藏，「只看新增」3 条，开关只在当前页内存生效、刷新重置），只在源码与 dev 预览可用，生产镜像不含此路由 |
 | `src/app/api/deals/route.ts` | `GET /api/deals` |
 | `src/app/api/health/route.ts` | `GET /api/health` |
 | `src/app/api/refresh/route.ts` | `POST /api/refresh` |
@@ -17,7 +19,8 @@
 | `src/lib/source-defs.ts` | 七个来源的固定 URL |
 | `src/lib/parse/` | LINUX DO、RSS/Atom、Epic 解析 |
 | `src/lib/classify.ts` | 关键词分类 |
-| `src/lib/filter-deals.ts` | 浏览器里的搜索、筛选和排序 |
+| `src/lib/board-view.ts` | 客户端校验 `/api/deals`、`/api/refresh` 与 SSR 快照；拒绝危险 URL 与畸形结构；计数从校验后 `deals` 推导 |
+| `src/lib/filter-deals.ts` | 浏览器里的搜索、筛选和排序；容忍畸形字段，搜索字面包含；可选 `includeOther`，省略时沿用原有筛选行为 |
 | `src/lib/refresh.ts` | 一轮抓取、锁、失败隔离 |
 | `src/lib/scheduler.ts` | 启动后首轮和每 2 小时 |
 | `src/lib/retention.ts` | 7 天和到期边界 |
@@ -30,7 +33,7 @@
 | `scripts/live-report.ts` | 立刻再抓一轮并写 `reports/`。不是日常命令 |
 | `scripts/write-snapshot.ts` | 用当前库写快照，不再次抓取 |
 
-个人状态不在数据库里。`deal-board.tsx` 使用 `localStorage` 键 `daily-deals-personal-v1`，值是 `{ "claimed": string[], "favorites": string[] }`，元素是规范后的原文 URL。
+个人状态不在数据库里。`deal-board.tsx` 使用 `localStorage` 键 `daily-deals-personal-v1`，值是 `{ "claimed": string[], "favorites": string[] }`，元素是规范后的原文 URL。「查看全部线索」的展示偏好用独立键 `daily-deals-show-all-v1`，刷新后保留；两者都监听 `storage` 事件做跨标签同步。默认隐藏「其他」只作用于展示，不改收录规则、分类规则或数据库。本地 dev 预览 `/demo` 的同类开关只在当前页面内存生效，刷新重置。
 
 ## 命令
 
@@ -88,7 +91,7 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 }
 ```
 
-`freshness` 用最近一轮结束时刻计算：超过 2.5 小时 `stale` 为真，超过 4 小时 `severe` 为真。`anomalies` 收录「尚未完成任何一轮」「数据过时」「上一轮全失败」「某源成功但 0 条」「某源解析条数骤降」等文字提示，页面顶栏会显示。逐源结果与失败分类写入结构化日志，见本文「结构化日志」章节。
+`freshness` 用最近一轮结束时刻计算：超过 2.5 小时 `stale` 为真，超过 4 小时 `severe` 为真。`anomalies` 收录「尚未完成任何一轮」「数据过时」「上一轮全失败」「某源成功但 0 条」「某源解析条数骤降」等文字提示，页面状态区和提示区会显示。逐源结果与失败分类写入结构化日志，见本文「结构化日志」章节。
 
 上面的数字只说明字段形状。`ok: true` 不是数据新鲜，也不是每条可领。`fetchedAt` 来自最近一轮已结束记录的 `finished_at`，这一轮即使全部失败也会更新它。`sourceHealth.ok` 只数这一轮里 `lastOk === true` 的来源。读库抛错时 HTTP 503，主体是 `{ "ok": false, "error": "数据库不可读" }`。
 
@@ -173,7 +176,7 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 
 1. 先看 `/api/health` 和页面，记下改之前的来源数和最后更新时间。
 2. 改代码。解析和分类的预期放进 `tests/`，夹具可以是合成的，但必须留在测试里。
-3. 跑 `npm test`。动到页面就在 1440、1280 和 390 宽度下看真实数据，不要只看编译。
+3. 依次跑 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build`。动到页面就在 1440、1280 和 390 宽度下看真实数据，不要只看编译；验收顺序见 [.mrdayone/verify.md](../.mrdayone/verify.md)，结果见 [界面重构测试报告](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）与 [reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log)。
 4. 生产依赖有变动时再跑 `npm audit --omit=dev --registry=https://registry.npmjs.org` 和完整的 `npm audit --registry=https://registry.npmjs.org`。本机默认 npm 镜像不支持审计端点。
 5. 需要更新容器时用 [OPERATIONS.md](OPERATIONS.md) 里只针对 `daily-free-info` 的命令。不要把 `./data` 放进镜像，也不要用测试库覆盖它。
 
@@ -181,11 +184,16 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 
 ## 视觉验收
 
-这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。
+这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。验收顺序、真实数据与异常路径见 [.mrdayone/verify.md](../.mrdayone/verify.md)，重构验收记录见 [界面重构测试报告](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）、[reports/ui-refactor-2026-11-09.log](../reports/ui-refactor-2026-11-09.log)、[reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log) 与 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)。
 
-- 1440px 和 1280px：页面最大宽度约 1360px，有顶栏、左侧来源/类别，主区在 `xl`（1280px 起）是两列卡片。不要退回成居中的窄手机条。
-- 390px：单列。顶栏信息不裁切、卡片底部控件不溢出；来源和类别可以横向滚动，不要把筛选项堆成好几屏才能看到第一条。
-- 顶栏能看到北京时间、来源成功数、已收录数、本轮新增和刷新按钮；卡片按钮是「打开原文」。页面持续可见地说明条目来自公开订阅源、只是抓到的线索、未核实有效性 / 条件 / 能否领取。刷新中按钮禁用并显示「刷新中」。冷却或失败时有红色说明。
-- 搜索标题、点一个来源、点一个类别、只看本轮新增、收藏、标记已领。已领卡片变灰并排到列表后面。刷新页面后，`daily-deals-personal-v1` 还在；写入失败有可见提示，另一个标签页的改动会通过 `storage` 事件同步过来。
-- 空库、筛选为空、接口失败要有各自不同的可见提示，不能用假条目填上，也不能让三种状态看起来一样。
-- 不从外部字体或 CDN 加载字体。当前页面使用系统无衬线字体。
+正式首页按 `/demo` 的布局：顶部只有品牌与「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。`/demo` 是本地 dev 预览的设计预览页（7 条示例，其中 1 条「其他」默认隐藏，「只看新增」仍为 3 条，开关只在当前页面内存生效、刷新重置），只在源码与 dev 预览可用；生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。正式页与它共用 `src/components/deal-board.css`。
+
+- 1440px 和 1280px：左侧为筛选与状态栏，主区为「信息列表」卡片；左栏文字不重叠、不裁切。不要退回成居中的窄手机条。
+- 390px：单列，无横向溢出；顶部信息不裁切、卡片底部控件不溢出；来源和类别不要堆成好几屏才能看到第一条。
+- 浅色底，`RGB(20,148,130)` 只作小面积强调；未实现深色模式；系统字体，不从外部字体或 CDN 加载。
+- 顶部只有品牌和「立即刷新」；刷新中按钮禁用并显示「刷新中」。左侧状态区能看到北京时间、来源成功数、已收录数、本轮新增与逐源结果；冷却或失败时有红色说明。页面持续可见地说明条目来自公开订阅源、只是抓到的线索、未核实有效性 / 条件 / 能否领取。
+- 交互逐项看：搜索标题（字面包含）、排序、点一个来源、点一个类别、只看本轮新增、收藏、标记已领、立即刷新、重置、刷新后状态保留。已领卡片变灰并排到列表后面。刷新页面后，`daily-deals-personal-v1` 与 `daily-deals-show-all-v1` 还在；写入失败有可见提示，另一个标签页的改动会通过 `storage` 事件同步过来。
+- 默认隐藏「其他」逐项看：「全部」视图首屏可见条数与「已隐藏 N 条「其他」线索」提示；点「查看全部线索」后显示所有条目；与「只看新增」组合；显式点「其他」分类或「我的收藏」时不隐藏；搜索仍受默认隐藏影响、结果为空会提示打开开关；重置回到默认隐藏；刷新后开关保留。这只是展示过滤，收录规则、分类规则与数据库都不变。本地 `/demo` 的 7 条示例默认隐藏 1 条「其他」，开关刷新即重置。
+- 异常路径用浏览器 `route` 改写 `/api/refresh`：恶意标题 / 链接、空库、畸形结构、429、断网；逐项确认页面保留旧内容或显示明确提示，不出现空白和假条目。客户端 `src/lib/board-view.ts` 拒绝 `javascript:` / `data:` / 带凭据 / 超长 URL，截断异常文本，关键结构坏时拒绝整份数据，计数从校验后 `deals` 推导。
+- 空库、筛选为空、轮询接口失败、本地状态写入失败各有区分提示，不能用假条目填上，也不能让几种状态看起来一样。
+- 命令与浏览器验收记录：`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷，390px 无横向溢出。测试项数以 `npm test` 输出为准，验收日志见本节开头。

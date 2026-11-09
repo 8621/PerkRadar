@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { filterDeals } from "../src/lib/filter-deals";
+import { filterDeals, type DealFilters } from "../src/lib/filter-deals";
 import type { DealDTO } from "../src/lib/types";
 
 function deal(partial: Partial<DealDTO> & Pick<DealDTO, "canonicalUrl" | "title" | "category" | "sourceId">): DealDTO {
@@ -107,5 +107,31 @@ describe("visible deals", () => {
       "https://example.com/b",
       "https://example.com/c",
     ]);
+  });
+
+  it("hides other-category leads only when includeOther is false", () => {
+    const other = deal({
+      id: 9,
+      canonicalUrl: "https://example.com/other",
+      title: "SYNTHETIC 闲聊",
+      category: "其他",
+      sourceId: "nodeseek",
+      publishedAt: 50,
+    });
+    const rows = [...deals, other];
+    const filters: DealFilters = { query: "", sourceId: "all", category: "all", onlyNew: false };
+    const personal = { claimed: [], favorites: [] };
+    assert.deepEqual(
+      filterDeals(rows, { ...filters, includeOther: false }, personal).map((item) => item.canonicalUrl),
+      ["https://example.com/c", "https://example.com/a", "https://example.com/b"],
+    );
+    assert.deepEqual(
+      filterDeals(rows, { ...filters, includeOther: true }, personal).map((item) => item.canonicalUrl),
+      ["https://example.com/other", "https://example.com/c", "https://example.com/a", "https://example.com/b"],
+    );
+    assert.deepEqual(
+      filterDeals(rows, filters, personal).map((item) => item.canonicalUrl),
+      ["https://example.com/other", "https://example.com/c", "https://example.com/a", "https://example.com/b"],
+    );
   });
 });

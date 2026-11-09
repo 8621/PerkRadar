@@ -7,7 +7,7 @@
 | `v0.1.0` | 是 |
 | 更早的未发布快照 | 否 |
 
-本轮加固尚未发版；[Unreleased] 的改动见 [CHANGELOG.md](CHANGELOG.md)。
+当前源码中的未发版改动见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 报告漏洞
 

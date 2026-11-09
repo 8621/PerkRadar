@@ -1,7 +1,7 @@
 # PerkRadar 开源状态清单
 
 > 本文只记录**当前状态**与仍需遵守的判据，不是施工顺序或交付记录。口径：**上传 GitHub 只代表源码公开，不代表网站已公网部署。**
-> 记录日期：2026-11-08（北京时间）。品牌对外统一为 `PerkRadar`，版本遵循语义化版本。
+> 记录日期：2026-11-09（北京时间）。品牌对外统一为 `PerkRadar`，版本遵循语义化版本。
 
 ## 1. 发布与仓库状态
 
@@ -9,7 +9,7 @@
 | --- | --- |
 | 公开版本 | `v0.1.0` 的 tag 与 GitHub Release 已于 2026-11-08 17:17（北京时间）发布 |
 | 分支 | 仓库在本目录独立初始化，`main` 跟踪 `origin/main` |
-| 本轮加固 | 已提交到 `main`，**尚未打新 tag、尚未发版**；变更条目见 [CHANGELOG.md](../CHANGELOG.md) 的 `[Unreleased]` |
+| 未发版改动 | `main` 上的当前源码对应 `[Unreleased]`，**尚未打新 tag、尚未发版**；变更条目见 [CHANGELOG.md](../CHANGELOG.md) |
 | 部署 | 不提供公网服务，默认只监听 `127.0.0.1:38471` |
 
 `package.json` 为 `perkradar@0.1.0`、`license: MIT`。仓库发布状态与工作区改动要分开看：`[Unreleased]` 描述当前源码，不是已发布版本的行为。
@@ -42,9 +42,15 @@
 
 ## 5. 对外说明与文档
 
-README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条认证的领取平台；条目只代表 feed 里有这条，不代表活动仍有效、条件已核实或账户里真有额度。并写明 7 个来源及其形态、关键词分类会误判、闲聊 / 求购 / 抽奖 / 推广会进入列表、除 Epic 的当前免费促销外 `expires_at` 为空、进程内 2 小时调度会漏轮、`ok: true` 只证明能读库、默认 loopback、上传 GitHub ≠ 已部署。
+README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条认证的领取平台；条目只代表 feed 里有这条，不代表活动仍有效、条件已核实或账户里真有额度。并写明 7 个来源及其形态、关键词分类会误判、闲聊 / 求购 / 抽奖 / 推广照常收录但「其他」在正式页默认隐藏、除 Epic 的当前免费促销外 `expires_at` 为空、进程内 2 小时调度会漏轮、`ok: true` 只证明能读库、默认 loopback、上传 GitHub ≠ 已部署。
 
-界面文案：「打开原文」「已收录」，页面持续可见地说明条目来自公开订阅源、只是线索、未核实有效性 / 条件 / 能否领取。维护入口齐全且互相引用一致：[README.md](../README.md)、[DEVELOPMENT.md](DEVELOPMENT.md)、[OPERATIONS.md](OPERATIONS.md)、[DATA_QUALITY.md](DATA_QUALITY.md)、[SOURCES.md](SOURCES.md)、[CONTRIBUTING.md](../CONTRIBUTING.md)、[SECURITY.md](../SECURITY.md)、[CHANGELOG.md](../CHANGELOG.md)、问题模板与 [AGENTS.md](../AGENTS.md)。
+界面文案：顶部只有品牌和「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。浅色底、`RGB(20,148,130)` 小面积强调，未实现深色模式，系统字体、不加载外部字体或 CDN；正式页与本地 dev 预览 `/demo` 共用 `src/components/deal-board.css`，`/demo` 是 7 条示例的设计预览（1 条「其他」默认隐藏，「只看新增」仍为 3 条），生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。页面持续可见地说明条目来自公开订阅源、只是线索、未核实有效性 / 条件 / 能否领取。客户端 `src/lib/board-view.ts` 校验接口响应与 SSR 快照；本地状态写入失败、轮询失败、空库、筛选为空，以及刷新 429 / 断网 / 畸形响应各有区分提示。
+
+正式页「全部」视图默认隐藏分类为「其他」的条目：显式选「其他」分类或「我的收藏」时不隐藏，搜索仍受默认隐藏影响（结果为空会提示打开开关），重置回默认隐藏。「查看全部线索」用独立 `localStorage` 键 `daily-deals-show-all-v1` 记住选择、监听 `storage` 事件跨标签同步、刷新后保留；`daily-deals-personal-v1` 与 `{ claimed, favorites }` 形状不变。本地 dev 预览 `/demo` 的同类开关只在当前页面内存生效、刷新重置。隐藏只作用于展示，不改收录规则、分类规则或数据库。
+
+界面重构的测试报告见 [docs/PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成），验收日志见 [reports/ui-refactor-2026-11-09.log](../reports/ui-refactor-2026-11-09.log)、[reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log) 与 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)；`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷（左栏文字重叠已修），390px 无横向溢出；默认隐藏、查看全部线索开关、只看新增组合、显式选「其他」/「我的收藏」、重置、刷新后开关保留等主流程均通过。测试项数以 `npm test` 输出为准。
+
+维护入口齐全且互相引用一致：[README.md](../README.md)、[DEVELOPMENT.md](DEVELOPMENT.md)、[OPERATIONS.md](OPERATIONS.md)、[DATA_QUALITY.md](DATA_QUALITY.md)、[SOURCES.md](SOURCES.md)、[CONTRIBUTING.md](../CONTRIBUTING.md)、[SECURITY.md](../SECURITY.md)、[CHANGELOG.md](../CHANGELOG.md)、问题模板与 [AGENTS.md](../AGENTS.md)。
 
 判据：对外文档里没有本机运行数字、本机绝对路径、某次会话的施工记录或「已上线」表述；错报 / 失效 / 来源失效 / 新来源申请都有可直接使用的提交路径。
 
@@ -62,6 +68,8 @@ README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条�
 ## 7. 数据质量与来源合规
 
 7 个固定来源，URL 写死在 `src/lib/source-defs.ts`，调用方不能替换；LINUX DO 走现有 Jina 地址，V2EX 用复数 `promotions.xml`。每源有一份允许域名（含子域），条目链接不在本源域名内会被丢弃并记 `offsite_link_dropped`。收录语义是「线索聚合、非优惠清单」：综合源按 7 天窗口收录，闲聊、求购、抽奖、推广会进入列表，分类误判是已知行为。反例测试覆盖闲聊、求购、抽奖、过期、未来促销、长期免费本体、限时礼包与空结果，并允许结果为空、不拿普通帖子补数量。
+
+分类里的「其他」只表示标题没命中优惠关键词，是线索聚合下的兜底标签，**不是优惠判定，也不代表已排除优惠**：与羊毛优惠无关的闲聊帖同样会归到这里。正式页「全部」视图已默认隐藏「其他」，并保留「查看全部线索」开关，见 [§5 界面文案](#5-对外说明与文档)、[DATA_QUALITY.md](DATA_QUALITY.md) 与 [README.md](../README.md)；隐藏只改展示，收录规则、分类规则与数据库都不变。是否在入库时收紧关键词、从源头少收这类闲聊帖，是**尚未实施的后续选项**：它会改变 7 天窗口下的收录语义与在架条数，需同步改 `src/lib/classify.ts`、对应测试与 [SOURCES.md](SOURCES.md) 的收录说明；当前收录规则保持不变。
 
 [SOURCES.md](SOURCES.md) 记录各源使用条件核查结论与核查日期（**未完成逐站书面核查**），不把「公开可访问」等同于可任意再分发；单独标注 LINUX DO 经第三方代理、Epic 使用静态后端端点两处风险，并提供移除与纠错渠道。新增来源必须按 [CONTRIBUTING.md](../CONTRIBUTING.md) 提供证据清单。
 

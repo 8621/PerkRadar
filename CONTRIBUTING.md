@@ -3,7 +3,7 @@
 ## 本地准备
 
 - Node.js 22（`node:sqlite` 是 Node 22 的实验 API）与 npm 10。`package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22，CI 两个 workflow 固定 Node 22。
-- `npm ci`，然后 `npm test`、`npm run lint`、`npm run build`。测试项数以 `npm test` 输出为准，不写进文档或注释。
+- `npm ci`，然后按 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build` 验收，详见 [.mrdayone/verify.md](.mrdayone/verify.md)。测试项数以 `npm test` 输出为准，不写进文档或注释。
 - 本机 Docker 启停见 [docs/OPERATIONS.md](docs/OPERATIONS.md)；默认只监听 `127.0.0.1:38471`。
 
 ## 测试约定
@@ -29,10 +29,11 @@
 
 1. 先看 `/api/health` 与页面，记下改之前的来源成功数、最后更新时间。
 2. 改代码，把预期写进 `tests/`。
-3. 依次跑 `npm test` → `npm run lint` → `npm run build`；动到页面还要在 1440 / 1280 / 390 宽度下看真实数据。
+3. 依次跑 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build` → `git diff --check`；动到页面还要在 1440 / 1280 / 390 宽度下看真实数据，并用 `preview check` 核对控制台报错、失败请求与横向溢出。真实数据路径除搜索、来源、分类、只看新增、收藏、已领、排序、刷新、重置、刷新后状态保留外，还要走默认隐藏「其他」这条：首屏可见条数与「已隐藏 N 条」提示、「查看全部线索」开关、与只看新增组合、显式点「其他」分类或我的收藏时不隐藏、结果为空提示打开开关、重置回默认隐藏、刷新后开关保留（`daily-deals-show-all-v1`）；本地 `/demo` 的 7 条示例默认隐藏 1 条「其他」，开关只在当前页面内存生效、刷新重置，「只看新增」仍为 3 条。验收顺序、异常路径清单见 [.mrdayone/verify.md](.mrdayone/verify.md)，结果见 [界面重构测试报告](docs/PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）、[reports/browser-adversarial-2026-11-09.log](reports/browser-adversarial-2026-11-09.log) 与 [reports/default-hide-other-2026-11-09.log](reports/default-hide-other-2026-11-09.log)。
+   - 不要在 dev server 运行时执行 `npm run build`：两者共用项目根目录的 `.next`，会让 dev 报 `ENOENT ... _buildManifest.js.tmp.*` 并返回 500。需要构建时先停 dev，必要时删除 `.next`，再启动 dev；Docker 内的构建不共用这个目录。
 4. 生产依赖有变动时重跑 `npm audit --omit=dev --registry=https://registry.npmjs.org`。本机默认 npm 镜像不支持 audit 端点，本地复查要手动加 `--registry=https://registry.npmjs.org`；CI 已显式指定官方 registry。
 5. 抓取、解析或接口逻辑有变动时，结构化日志沿用 `[deals] {...}` 前缀与事件字段（见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)），失败用 stderr、成功用 stdout，不写标题正文、Cookie、请求头或个人状态。
-6. 需要更新容器时用 `docker compose -p daily-free-info up -d --build`，只操作本项目。
+6. 需要更新容器时按 [docs/OPERATIONS.md](docs/OPERATIONS.md) 用 `docker compose -p daily-free-info up -d --build` 重建，只操作本项目，不改容器名、端口或卷。
 
 ## 不可退让
 

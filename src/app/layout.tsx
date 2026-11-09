@@ -9,13 +9,13 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#f6f3ee",
+  themeColor: "#f7f8fa",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
-      <body className="min-h-dvh bg-[#f6f3ee] font-sans text-[#1c2118] antialiased">{children}</body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body className="min-h-dvh bg-[#f7f8fa] font-sans text-[#292d34] antialiased" suppressHydrationWarning>{children}</body>
     </html>
   );
 }

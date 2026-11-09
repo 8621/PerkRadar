@@ -6,9 +6,5 @@ export const runtime = "nodejs";
 
 export default function HomePage() {
   const board = getBoardState();
-  return (
-    <main>
-      <DealBoard initial={board} />
-    </main>
-  );
+  return <DealBoard initial={board} />;
 }
