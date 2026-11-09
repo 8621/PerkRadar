@@ -17,6 +17,13 @@ export type ParsedItem = {
   expiresAt: number | null;
 };
 
+export type SourceQuality = {
+  consecutiveFailures?: number;
+  countDrop?: boolean;
+  structureAnomaly?: boolean;
+  warning?: string | null;
+};
+
 export type SourceStatus = {
   id: string;
   name: string;
@@ -26,6 +33,7 @@ export type SourceStatus = {
   lastFetched: number | null;
   lastInserted: number | null;
   lastFinalUrl: string | null;
+  quality?: SourceQuality;
 };
 
 export type DealDTO = {

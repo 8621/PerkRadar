@@ -6,6 +6,7 @@ export type HealthReport = {
   fetchedAtBeijing: string | null;
   sourceHealth: BoardState["sourceHealth"];
   failures: BoardState["failures"];
+  sources?: BoardState["sources"];
   refreshInProgress: boolean;
   activeCount: number;
   newCount: number;
@@ -25,6 +26,7 @@ export function toHealthReport(board: BoardState): HealthReport {
     fetchedAtBeijing: board.lastUpdatedLabel,
     sourceHealth: board.sourceHealth,
     failures: board.failures,
+    sources: board.sources,
     refreshInProgress: board.refreshInProgress,
     activeCount: board.activeCount,
     newCount: board.newCount,

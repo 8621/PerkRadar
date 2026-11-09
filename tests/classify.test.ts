@@ -18,6 +18,25 @@ describe("classify", () => {
     assert.equal(classify("iProvide notes", "appinn"), "其他");
   });
 
+  it("filters low-relevance markers before deal keywords for non-Epic sources", () => {
+    assert.equal(classify("【抽奖】10个免费账号", "linuxdo"), "其他");
+    assert.equal(classify("优惠码新闻汇总", "appinn"), "其他");
+    assert.equal(classify("免费领取活动更新公告", "ghxi"), "其他");
+    assert.equal(classify("有会员优惠吗？", "v2ex"), "其他");
+    assert.equal(classify("收优惠码", "v2ex"), "其他");
+    assert.equal(classify("求优惠码", "v2ex"), "其他");
+    assert.equal(classify("收team优惠码", "v2ex"), "其他");
+    assert.equal(classify("求team会员", "v2ex"), "其他");
+    assert.equal(classify("收团队优惠码", "v2ex"), "其他");
+    assert.equal(classify("求管理员会员", "v2ex"), "其他");
+    assert.equal(classify("求家庭套餐", "v2ex"), "其他");
+    assert.equal(classify("收款工具限免", "v2ex"), "限免");
+    assert.equal(classify("收款工具优惠码", "v2ex"), "低价优惠");
+    assert.equal(classify("收款工具限免优惠码", "v2ex"), "限免");
+    assert.equal(classify("Epic 免费游戏新闻", "v2ex"), "其他");
+    assert.equal(classify("Epic 免费游戏新闻", "epic"), "游戏");
+  });
+
   it("follows the documented keyword order", () => {
     assert.equal(classify("免费领取会员", "linuxdo"), "会员订阅");
     assert.equal(classify("本周限免", "linuxdo"), "限免");

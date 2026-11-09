@@ -91,7 +91,7 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 }
 ```
 
-`freshness` 用最近一轮结束时刻计算：超过 2.5 小时 `stale` 为真，超过 4 小时 `severe` 为真。`anomalies` 收录「尚未完成任何一轮」「数据过时」「上一轮全失败」「某源成功但 0 条」「某源解析条数骤降」等文字提示，页面状态区和提示区会显示。逐源结果与失败分类写入结构化日志，见本文「结构化日志」章节。
+`freshness` 用最近一轮结束时刻计算：超过 2.5 小时 `stale` 为真，超过 4 小时 `severe` 为真。`anomalies` 收录「尚未完成任何一轮」「数据过时」「上一轮全失败」「某源成功但 0 条」「某源解析条数骤降」「连续失败达到 3 轮」「解析结构异常」等文字提示，页面状态区和提示区会显示。逐源 `quality` 汇总每源近 8 条已结束轮次；历史查询最多读取 32 条，不增加数据库表。连续失败在最近一次成功后清零，条数相对上一轮下降至少 50% 时告警，识别到已知解析/响应格式错误时标记结构异常。逐源结果与失败分类写入结构化日志，见本文「结构化日志」章节。
 
 上面的数字只说明字段形状。`ok: true` 不是数据新鲜，也不是每条可领。`fetchedAt` 来自最近一轮已结束记录的 `finished_at`，这一轮即使全部失败也会更新它。`sourceHealth.ok` 只数这一轮里 `lastOk === true` 的来源。读库抛错时 HTTP 503，主体是 `{ "ok": false, "error": "数据库不可读" }`。
 
@@ -105,10 +105,10 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 - `sourceHealth`、`activeCount`、`newCount`、`refreshInProgress`。
 - `roundStatus`：`success`、`partial`、`failed`，或还没有结束轮时 `null`。
 - `failures`：这一轮失败来源的 `sourceId`、`sourceName`、`error`。
-- `sources`：固定 7 个来源。`lastOk` 在从未跑过时是 `null`。`lastFetched` 是解析出的条数，`lastInserted` 是这一轮新插入的条数，`lastFinalUrl` 是跟随重定向后的最终 URL。
+- `sources`：固定 7 个来源。`lastOk` 在从未跑过时是 `null`。`lastFetched` 是解析出的条数，`lastInserted` 是这一轮新插入的条数，`lastFinalUrl` 是跟随重定向后的最终 URL；可选 `quality` 提供近 8 轮连续失败数、条数骤降、解析结构异常和简短告警。旧响应没有 `quality` 时客户端按无告警兼容处理。
 - `deals`：当前在架条目。`isNew` 表示它的 `first_seen_round_id` 等于最近一轮已结束的 id。`expiresSoon` 表示到期时刻在 48 小时内且仍晚于现在。`summary` 没有正文时是空字符串。
 - `freshness`：`lastRoundAgeMs`、`stale`（超过 2.5 小时）、`severe`（超过 4 小时）。
-- `anomalies`：数据过时、上一轮全失败、某源成功但 0 条、某源解析条数骤降等文字提示。
+- `anomalies`：数据过时、上一轮全失败、某源成功但 0 条、某源解析条数骤降、连续失败达到 3 轮和解析结构异常等文字提示。
 
 读库抛错时 HTTP 503，主体是 `{ "error": "数据库不可读" }`，并记 `deals_read_failed` 日志；与 `/api/health` 的降级一致。成功响应的字段不变。
 

@@ -265,6 +265,33 @@ export function previousSourceRuns(roundId: number): SourceRunRow[] {
   return id == null ? [] : listSourceRuns(id);
 }
 
+/** Return recent completed runs for one source, bounded for predictable health reads. */
+export function recentSourceRuns(sourceId: string, limit = 8): SourceRunRow[] {
+  const bounded = Math.max(1, Math.min(32, Math.floor(limit)));
+  return getDb()
+    .prepare(
+      `SELECT sr.*
+       FROM source_runs sr
+       JOIN rounds r ON r.id = sr.round_id
+       WHERE sr.source_id = ? AND r.status != 'running'
+       ORDER BY sr.round_id DESC, sr.id DESC
+       LIMIT ?`,
+    )
+    .all(sourceId, bounded)
+    .map((row) => ({
+      id: asNumber(row.id) ?? 0,
+      roundId: asNumber(row.round_id) ?? 0,
+      sourceId: String(row.source_id),
+      ok: Number(row.ok) === 1,
+      fetchedCount: asNumber(row.fetched_count) ?? 0,
+      insertedCount: asNumber(row.inserted_count) ?? 0,
+      error: row.error == null ? null : String(row.error),
+      finalUrl: row.final_url == null ? null : String(row.final_url),
+      startedAt: asNumber(row.started_at) ?? 0,
+      finishedAt: asNumber(row.finished_at),
+    }));
+}
+
 function mapRound(row: Record<string, unknown>): RoundRow {
   return {
     id: asNumber(row.id) ?? 0,

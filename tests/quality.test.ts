@@ -60,10 +60,12 @@ describe("data quality negative cases", () => {
     assert.equal(classify("【避雷】无良商家应当被置顶", "nodeseek"), "其他");
   });
 
-  it("records the known keyword misclassification of lotteries and vague offers", () => {
-    assert.equal(classify("【抽奖】10个免费gpt账号（未接码）", "linuxdo"), "免费白嫖");
-    assert.equal(classify("有打篮球 v2er 吗？ 送会员了！", "v2ex"), "会员订阅");
-    assert.equal(classify("收team优惠码？", "nodeseek"), "低价优惠");
+  it("keeps lotteries, vague offers, and questions out of deal categories", () => {
+    assert.equal(classify("【抽奖】10个免费gpt账号（未接码）", "linuxdo"), "其他");
+    assert.equal(classify("有打篮球 v2er 吗？ 送会员了！", "v2ex"), "其他");
+    assert.equal(classify("收team优惠码？", "nodeseek"), "其他");
+    assert.equal(classify("求购二手路由器", "nodeseek"), "其他");
+    assert.equal(classify("优惠码评测", "appinn"), "其他");
   });
 
   it("drops expired items and keeps the exact millisecond boundaries", () => {

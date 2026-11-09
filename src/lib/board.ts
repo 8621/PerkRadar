@@ -5,6 +5,7 @@ import {
   listDeals,
   listSourceRuns,
   previousSourceRuns,
+  recentSourceRuns,
   recoverDanglingRounds,
 } from "./db";
 import { isExpiringSoon, isStale } from "./retention";
@@ -56,6 +57,32 @@ export function getBoardState(now = Date.now()): BoardState {
     isNew: round != null && deal.firstSeenRoundId === round.id,
   }));
 
+  const qualityBySource = new Map(
+    SOURCE_DEFS.map((source) => {
+      const recent = recentSourceRuns(source.id, 8);
+      let consecutiveFailures = 0;
+      for (const run of recent) {
+        if (run.ok) break;
+        consecutiveFailures += 1;
+      }
+      const current = recent[0];
+      const previous = recent[1];
+      const countDrop = Boolean(
+        current && current.ok && previous && previous.ok && previous.fetchedCount > 0 && current.fetchedCount <= previous.fetchedCount / 2,
+      );
+      const structureAnomaly = Boolean(
+        current &&
+          !current.ok &&
+          /未能解析|商品列表|网页而不是订阅源|不是 JSON|LINUX DO 福利列表|Markdown 解析出条目/.test(current.error ?? ""),
+      );
+      const warnings: string[] = [];
+      if (consecutiveFailures >= 3) warnings.push(`连续失败 ${consecutiveFailures} 轮`);
+      if (countDrop) warnings.push(`解析条数骤降至 ${current!.fetchedCount}`);
+      if (structureAnomaly) warnings.push("解析结构异常");
+      return [source.id, { consecutiveFailures, countDrop, structureAnomaly, warning: warnings.length ? warnings.join("；") : null }] as const;
+    }),
+  );
+
   const sources: SourceStatus[] = SOURCE_DEFS.map((source) => {
     const run = runBySource.get(source.id);
     return {
@@ -67,6 +94,7 @@ export function getBoardState(now = Date.now()): BoardState {
       lastFetched: run ? run.fetchedCount : null,
       lastInserted: run ? run.insertedCount : null,
       lastFinalUrl: run?.finalUrl ?? null,
+      quality: qualityBySource.get(source.id),
     };
   });
 
@@ -100,7 +128,7 @@ export function getBoardState(now = Date.now()): BoardState {
   const previousBySource = new Map(previous.map((run) => [run.sourceId, run]));
   for (const source of sources) {
     const before = previousBySource.get(source.id);
-    if (before && before.fetchedCount > 0 && source.lastFetched != null) {
+    if (before && source.lastOk === true && before.fetchedCount > 0 && source.lastFetched != null) {
       const drop = (before.fetchedCount - source.lastFetched) / before.fetchedCount;
       if (drop >= 0.5) {
         anomalies.push(`${source.name} 解析条数从 ${before.fetchedCount} 降到 ${source.lastFetched}`);
@@ -108,6 +136,10 @@ export function getBoardState(now = Date.now()): BoardState {
     } else if (source.lastOk === true && source.lastFetched === 0) {
       anomalies.push(`${source.name} 本轮成功但解析到 0 条`);
     }
+    if (source.quality?.consecutiveFailures && source.quality.consecutiveFailures >= 3) {
+      anomalies.push(`${source.name} 连续失败 ${source.quality.consecutiveFailures} 轮`);
+    }
+    if (source.quality?.structureAnomaly) anomalies.push(`${source.name} 解析结构异常`);
   }
 
   return {

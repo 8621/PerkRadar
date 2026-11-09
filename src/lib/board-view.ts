@@ -116,6 +116,16 @@ function normalizeDeal(value: unknown): DealDTO | null {
   };
 }
 
+function normalizeSourceQuality(value: unknown): SourceStatus["quality"] | undefined {
+  if (!isRecord(value)) return undefined;
+  const consecutiveFailures = count(value.consecutiveFailures);
+  const countDrop = typeof value.countDrop === "boolean" ? value.countDrop : false;
+  const structureAnomaly = typeof value.structureAnomaly === "boolean" ? value.structureAnomaly : false;
+  const warning = nullableText(value.warning, ERROR_MAX);
+  if (consecutiveFailures === 0 && !countDrop && !structureAnomaly && warning == null) return undefined;
+  return { consecutiveFailures, countDrop, structureAnomaly, warning };
+}
+
 function normalizeSource(value: unknown): SourceStatus | null {
   if (!isRecord(value)) return null;
   const id = clampText(value.id, SHORT_MAX);
@@ -129,6 +139,7 @@ function normalizeSource(value: unknown): SourceStatus | null {
     lastFetched: nullableNumber(value.lastFetched),
     lastInserted: nullableNumber(value.lastInserted),
     lastFinalUrl: safeHttpUrl(value.lastFinalUrl),
+    quality: normalizeSourceQuality(value.quality),
   };
 }
 

@@ -61,10 +61,21 @@ function readError(data: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function formatSourceQuality(source: SourceStatus): string {
+  const quality = source.quality;
+  if (!quality) return "";
+  if (quality.warning) return `；质量提醒：${quality.warning}`;
+  if (quality.consecutiveFailures && quality.consecutiveFailures >= 3) return `；连续失败 ${quality.consecutiveFailures} 轮`;
+  if (quality.structureAnomaly) return "；解析结构异常";
+  if (quality.countDrop) return "；解析条数骤降";
+  return "";
+}
+
 function formatSourceOutcome(source: SourceStatus): string {
-  if (source.lastOk == null) return "尚未抓取";
-  if (source.lastOk) return `成功 ${source.lastFetched ?? 0} 条，新增 ${source.lastInserted ?? 0} 条`;
-  return `失败（${source.lastError ?? "原因未记录"}），下一轮重试`;
+  const quality = formatSourceQuality(source);
+  if (source.lastOk == null) return `尚未抓取${quality}`;
+  if (source.lastOk) return `成功 ${source.lastFetched ?? 0} 条，新增 ${source.lastInserted ?? 0} 条${quality}`;
+  return `失败（${source.lastError ?? "原因未记录"}），下一轮重试${quality}`;
 }
 
 function formatFailure(failure: { sourceName: string; error: string }): string {
