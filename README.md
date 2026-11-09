@@ -1,86 +1,249 @@
 # PerkRadar
 
-> 对外品牌统一为 `PerkRadar`。运行标识（Compose 项目名、容器名、数据卷、收藏键、端口）保持不变，避免改名导致本机状态丢失，见 [开源发布清单](docs/OPEN_SOURCE_CHECKLIST.md)。
+PerkRadar 是一个本地运行的优惠线索聚合器。它定时读取固定的公开 RSS、Atom、JSON 和 Markdown 来源，把标题、原文链接和短摘要整理到一个轻量的 SQLite 数据库，再用网页看板帮助你搜索、筛选、收藏和标记已领。
 
-**这是多来源优惠线索聚合，不是逐条认证的领取平台。**
+它的定位是“先把线索集中起来”，不是逐条认证的领取平台。页面里的一条记录只代表对应来源曾返回过这条内容，不代表活动仍然有效、领取条件已经核实、账户一定有额度，也不代表 PerkRadar 已经打开原文逐条确认。使用时请把原文页面作为最终依据。
 
-服务端进程定时抓取固定来源，把标题、原文链接与必要摘要写入 SQLite，页面只展示抓到的结果。收藏和已领只存在这台浏览器，不上传、不入库。
+## 快速开始
 
-条目出现在页面上，只表示对应 feed 里有这条，**不表示活动仍有效、领取条件已核实、账户里真有额度，也不表示我们已经打开原文逐条确认**。数据是否真实、是否还新鲜，比界面是否能打开更重要。
+### 环境要求
 
-## 它不做什么
+- Node.js 22 或更高版本
+- npm
+- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境
 
-- 不逐条核实可领性，不验证价格、额度或资格；标题里的金额、积分、美元是原文用词，程序不换算成现金，也没有价格字段。
-- **除 Epic 的当前免费促销外，没有真实截止时间**。页面上的「近 7 天」是本库的留存规则，不是活动截止日；`到期` 标签只出现在 Epic 条目上。
-- 不把在架条数当成官方确认。综合 RSS/Atom 源里的闲聊、求购、抽奖、推广、条件不明的标题都会被收录并按关键词分类；分类只看标题关键词，会误判（例如抽奖标题可能被分到「免费白嫖」）。
-- 分类对不上关键词时记为「其他」。「其他」只表示没有匹配到优惠关键词的线索，**不是优惠判定，也不代表已排除优惠**：与羊毛优惠无关的闲聊帖同样会归到这里。正式页「全部」视图默认隐藏「其他」条目，结果标题行显示可见条数与「已隐藏 N 条「其他」线索」，并提供「查看全部线索」开关；显式选「其他」分类或「我的收藏」时不隐藏，搜索仍受默认隐藏影响（结果为空会提示打开开关），重置回默认隐藏。这只改展示，不改收录规则与数据库；是否收紧入库关键词是尚未实施的后续选项，见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) 与 [docs/OPEN_SOURCE_CHECKLIST.md](docs/OPEN_SOURCE_CHECKLIST.md)。
-- 没有简介就留空，不补写；标题最长 300 字、摘要最长 160 字，都来自原文纯文本。清洗会去掉 ANSI/SGR 控制序列（含只剩 `[1m` 这类残留与 `[H[J[3J` 这类裸 CSI 片段）、C0 控制字符和由 `+ * = _ ~ #` 连续 8 个以上组成的分隔线，不存正文、Cookie 或请求头。读库展示时会再做一次同样的幂等清洗，早期已入库的历史行同样生效，不改写现有数据库。
-- 不提供公网服务。默认只监听 `127.0.0.1:38471`。**把源码上传到 GitHub 只代表代码公开，不代表网站已经公网部署。**
+Node.js 22 是必需条件，因为项目使用了 Node 内置的 `node:sqlite`。依赖版本锁在 `package-lock.json` 中。
 
-## 来源覆盖
+### 用 Docker 运行
 
-七个固定来源，URL 写死在 `src/lib/source-defs.ts`，调用方不能替换：
-
-| 来源 | 形态 |
-| --- | --- |
-| LINUX DO 福利羊毛 | 经 Jina 读取的 Markdown |
-| V2EX 推广 | Atom |
-| Epic | 静态 JSON，只取当前免费促销 |
-| NodeSeek、小众软件、果核剥壳、异次元软件世界 | RSS / Atom |
-
-综合源收录 7 天窗口内的条目，但每源只保留落在本源允许域名（含子域）内的链接：域名不符的条目直接丢弃，并记 `offsite_link_dropped` 日志。Epic 只收 `start <= now < end`、折扣价为 0 的当前免费促销；商品列表为空数组时视为上游异常、该源失败，不会删除库里已有的 Epic 行。同一规范化 URL 只留一行，先写入的来源保留；规范化不统一 `www.` 前缀、http/https 与路径大小写，这是已知边界。逐源行为、允许域名与时间边界见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。
-
-原文链接会先校验再保留：超过 2048 字符、含 `user:pass@` 凭证或非 http/https 协议的会被拒绝；发布时间早于 2000-01-01 或晚于当前时刻 +7 天的记为 `null`，留存改用首次收录时间；单个 feed 最多解析 2000 条；响应体累计超过 150 万字符即停止下载并记失败。公开可访问不等于可任意再分发：各源使用条件、内容纠错与来源移除渠道见 [docs/SOURCES.md](docs/SOURCES.md) 与 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。
-
-## 刷新与时效
-
-- 进程内定时器：启动约 4 秒先抓一轮，之后每 2 小时一轮。不是系统 cron，也不是浏览器计时。
-- **停机就停**：笔记本休眠、Docker 未启动、容器停止或崩溃都会停。没有补轮队列，恢复后只再跑一轮，不会把错过的每一档补齐；重启会立刻重新抓一轮并重排下次时间。
-- 单个来源有 25 秒超时，失败不影响其他来源；失败时不改写该源已有的标题和时间。
-- `/api/health` 返回 `ok: true` 只说明进程能读数据库；**全失败的一轮也会更新「更新时间」**。判断新鲜度要看最近一轮结束时间与逐源成败，见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)。`/api/health` 与页面状态区和提示区会给出新鲜度与异常提示，但程序不会主动发送邮件或聊天通知。
-
-## 页面与本地状态
-
-- 正式首页顶部只有品牌和「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」。卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」和「标记已领」。页面是浅色底，用 `RGB(20,148,130)` 作小面积强调；未实现深色模式；使用系统字体，不加载外部字体或 CDN。
-- 「全部」视图默认隐藏分类为「其他」的条目；显式选「其他」分类或「我的收藏」时不隐藏，搜索也受默认隐藏影响，结果为空会提示打开开关，重置回到默认隐藏。这只是展示过滤，所有条目仍照常入库。
-- `/demo` 是**本地 dev 预览**的设计预览页，含 7 条示例（其中 1 条为「其他」，默认隐藏），只存在于源码与 dev 预览；生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。预览页的「查看全部线索」开关只在当前页面内存生效、刷新即重置，「只看新增」仍为 3 条示例。正式页与它共用 `src/components/deal-board.css`。
-- 正式页仍用 `GET /api/deals` 轮询、`POST /api/refresh` 刷新、`GET /api/health` 的数据。`src/lib/board-view.ts` 在客户端校验接口响应与 SSR 快照：拒绝 `javascript:` / `data:` / 带凭据 / 超长 URL，截断异常文本，关键结构损坏时拒绝整份数据，计数从校验后的 `deals` 推导；`filterDeals` 容忍畸形字段，搜索按字面包含匹配，并接受可选 `includeOther`（省略时沿用原有筛选行为）。
-- 收藏与已领使用 `localStorage` 键 `daily-deals-personal-v1`（`{ claimed, favorites }`，形状不变）；「查看全部线索」的选择用独立键 `daily-deals-show-all-v1` 记住，刷新后保留。两者写入失败都有可见提示，并监听 `storage` 事件做跨标签同步。
-- 页面持续可见地说明：条目来自公开订阅源，只表示抓到线索，未核实是否仍有效、领取条件或能否领取。
-- 本地状态写入失败、轮询失败、空库、筛选为空，以及刷新 429 / 断网 / 畸形响应各有区分提示；这些空状态都不会用假条目填满。
-
-## 本机怎么打开
-
-在项目目录执行，默认只监听本机：
+这是推荐的本机运行方式。它会构建生产镜像、启动容器，并把 SQLite 数据保存在项目目录的 `./data` 中。
 
 ```bash
 docker compose -p daily-free-info up -d --build
+```
+
+打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)，或先检查服务健康状态：
+
+```bash
 curl -sS http://127.0.0.1:38471/api/health
 ```
 
-完整的启停、端口与备份见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。数据库在当前目录的 `./data`，不要删。首次启动只会抓真实来源，不会填入示例优惠；测试夹具不会进入生产库或生产镜像。
+默认只绑定到本机回环地址 `127.0.0.1`，不会自动提供公网访问。宿主端口被占用时，只替换宿主端口，容器内端口仍保持 `38471`：
 
-## 文档
+```bash
+HOST_PORT=38481 docker compose -p daily-free-info up -d --build
+```
 
-| 文档 | 用途 |
+此时访问 [http://127.0.0.1:38481/](http://127.0.0.1:38481/)。完整的启停、日志、备份、恢复和回滚说明见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
+
+### 用 npm 开发
+
+```bash
+npm ci
+npm run dev
+```
+
+开发服务器监听 `0.0.0.0:38471`，打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。开发模式默认使用项目目录下的 `data/deals.db`，首次运行会从真实来源抓取，不会灌入示例优惠。
+
+本地设计预览页 `/demo` 只在开发环境提供，用于查看界面布局和交互示例：
+
+[http://127.0.0.1:38471/demo](http://127.0.0.1:38471/demo)
+
+生产镜像不包含 `/demo` 路由。
+
+## 页面能做什么
+
+- 按标题搜索，使用字面包含匹配
+- 按来源和分类筛选，并支持排序
+- 查看本轮新增
+- 收藏条目、标记已领
+- 打开规范化后的原文链接
+- 手动触发刷新，并查看刷新冷却、来源成功数和异常提示
+- 查看当前在架条目、最近一轮状态、逐来源结果和数据新鲜度
+
+首页的“全部”视图默认隐藏分类为“其他”的线索，因为综合订阅源可能包含闲聊、求购、抽奖、推广和新闻。点击“查看全部线索”可以显示它们；显式选择“其他”或“我的收藏”时不会隐藏。这个行为只影响页面展示，不会删除数据库记录，也不会改变抓取源和分类规则。
+
+收藏与已领状态只保存在当前浏览器的 `localStorage`：
+
+- `daily-deals-personal-v1`：`{ "claimed": string[], "favorites": string[] }`
+- `daily-deals-show-all-v1`：是否显示“其他”线索
+
+这些状态不会上传到服务端，也不会写入 SQLite。清除浏览器站点数据会清除它们。
+
+## 数据来源与处理方式
+
+当前使用七个固定来源。来源地址写在 [`src/lib/source-defs.ts`](src/lib/source-defs.ts) 中，应用调用方不能替换。
+
+| 来源 | 格式 | 主要规则 |
+| --- | --- | --- |
+| LINUX DO 福利羊毛 | 经 Jina 转换的 Markdown | 解析福利区主题标题、主题链接和 RFC822 日期 |
+| V2EX 推广 | Atom | 使用 `promotions.xml`，去掉链接中的 `#reply0` |
+| Epic | JSON | 只收录当前时间处于促销窗口内、折扣价为 0 的促销 |
+| NodeSeek | RSS / Atom | 收录允许域名内的 feed 条目 |
+| 小众软件 | RSS / Atom | 收录允许域名内的 feed 条目 |
+| 果核剥壳 | RSS / Atom | 收录允许域名内的 feed 条目 |
+| 异次元软件世界 | RSS / Atom | 请求会跟随重定向到最终地址 |
+
+综合 RSS / Atom 来源使用 7 天留存窗口，并限制条目链接必须位于该来源允许的域名内。来源失败会与其他来源隔离，不会因为某一个来源超时而清空其他来源的数据。每个来源的请求超时为 25 秒，单个 feed 最多解析 2000 条，响应累计超过 150 万字符会停止读取。
+
+链接会在入库前校验并规范化：只接受 `http` 和 `https`，拒绝过长链接、带 `user:pass@` 凭证的链接和跨来源域名链接。标题最多保存 300 个字符，摘要最多保存 160 个字符；来源没有提供简介时保持为空，不自行补写价格、日期或领取条件。
+
+Epic 条目的 `expiresAt` 来自当前免费促销的结束时间。其他来源没有真实活动截止时间，页面中的“近 7 天”是数据库留存规则，不是活动到期日。
+
+分类是标题关键词分类，不是人工审核：
+
+- Epic，或包含游戏、Steam 等词：游戏
+- 会员、订阅、Pro：会员订阅
+- 限免、免费领取：限免
+- 白嫖、免费、永免：免费白嫖
+- 折扣、优惠码、大促、降价、打折、爆降：低价优惠
+- 其他情况：其他
+
+因此，标题中出现“免费”的抽奖、闲聊或条件不明内容仍可能被分到“免费白嫖”。分类结果不能当成领取资格或优惠真实性证明。来源边界、时间规则和每轮验收清单见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)，来源使用条件见 [docs/SOURCES.md](docs/SOURCES.md)。
+
+## 刷新和新鲜度
+
+服务启动约 4 秒后执行一轮抓取，之后每 2 小时执行一轮。调度器在 Node 进程内运行，不依赖浏览器计时器或系统 cron。
+
+- 停止进程、关闭 Docker 或让电脑休眠时，抓取会停止
+- 恢复运行后不会补抓停机期间错过的每一轮，只会继续执行下一轮
+- 手动刷新和定时刷新共用进程内锁，同一时间只允许一轮运行
+- 手动刷新有 60 秒冷却，并限制同一 IP 在 10 分钟内最多触发 8 次
+- 最近一轮超过 2.5 小时会标记为过时，超过 4 小时会标记为严重过时
+- 程序不会发送邮件、聊天消息或系统通知
+
+`/api/health` 的 `ok: true` 只表示进程能够读取 SQLite，不表示数据新鲜，更不表示每条线索都有效。判断数据状态时，应同时查看 `sourceHealth`、`failures`、`fetchedAt`、`freshness` 和 `anomalies`。
+
+## API
+
+三个接口都使用 `cache-control: no-store`。
+
+### `GET /api/health`
+
+读取服务和最近一轮抓取状态。数据库不可读时返回 HTTP 503。
+
+```bash
+curl -sS http://127.0.0.1:38471/api/health
+```
+
+重点字段：
+
+- `ok`：进程是否能读取数据库
+- `sourceHealth`：最近一轮成功的来源数和来源总数
+- `failures`：最近一轮失败的来源及错误信息
+- `fetchedAt`：最近一轮结束时间
+- `freshness`：是否过时或严重过时
+- `anomalies`：全失败、来源返回 0 条、条数骤降等提示
+
+### `GET /api/deals`
+
+返回网页看板所需的完整 `BoardState`，包括当前条目、来源状态、刷新状态、最近一轮结果和新鲜度信息。
+
+```bash
+curl -sS http://127.0.0.1:38471/api/deals
+```
+
+### `POST /api/refresh`
+
+触发一次手动抓取。请求不需要 body。
+
+```bash
+curl -sS -X POST http://127.0.0.1:38471/api/refresh
+```
+
+常见响应：
+
+| 状态码 | 含义 |
 | --- | --- |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 架构、命令、API、结构化日志、测试、视觉验收 |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Docker 启停、排障、备份恢复、回滚 |
-| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | 七个来源与允许域名、时间边界、收录边界、每轮怎么验收 |
-| [docs/SOURCES.md](docs/SOURCES.md) | 来源清单、使用条件核查状态、移除与纠错渠道 |
-| [docs/OPEN_SOURCE_CHECKLIST.md](docs/OPEN_SOURCE_CHECKLIST.md) | 开源发布当前状态与验收判据 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、测试约定、新增来源所需证据 |
-| [SECURITY.md](SECURITY.md) | 漏洞报告渠道与部署边界 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 第三方依赖许可声明 |
-| [docs/PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md](docs/PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md) | 界面重构测试报告（配套 .docx 由 IDE 生成） |
-| [reports/ui-refactor-2026-11-09.log](reports/ui-refactor-2026-11-09.log) | 界面重构验收日志 |
-| [reports/browser-adversarial-2026-11-09.log](reports/browser-adversarial-2026-11-09.log) | 浏览器异常路径验收日志 |
-| [reports/default-hide-other-2026-11-09.log](reports/default-hide-other-2026-11-09.log) | 默认隐藏「其他」与「查看全部线索」验收日志 |
-| [AGENTS.md](AGENTS.md) | 本地维护 agent 先读什么、什么不能退让 |
+| `200` | 抓取完成并返回最新看板数据 |
+| `400` | 请求体超过允许大小 |
+| `403` | 跨站刷新请求被拒绝 |
+| `409` | 已有一轮刷新正在运行 |
+| `429` | 仍在冷却期或触发频率限制 |
+| `500` | 未分类的刷新错误 |
 
-这套文档描述当前源码行为。以下边界仍然存在：不提供公网服务，**上传 GitHub ≠ 已部署**；停机不补轮、只有单实例的进程内锁；除 Epic 的当前免费促销外没有真实截止时间；新鲜度与异常只在 `/api/health` 与页面状态区和提示区提示，程序不会主动发送通知；公开快照在本机 Compose 默认关闭；收藏与已领只在这台浏览器。
+这个接口没有登录、token 或 API key 认证。当前同源检查和限流只适合本机使用，不能直接把端口暴露到公网。公网部署前必须补充反向代理、TLS、身份认证、刷新接口访问控制和全局速率限制，相关边界见 [SECURITY.md](SECURITY.md)。
+
+## 项目结构
+
+```text
+src/
+├── app/
+│   ├── api/deals/       # 当前条目与看板数据
+│   ├── api/health/      # 健康和新鲜度状态
+│   ├── api/refresh/     # 手动刷新
+│   ├── demo/            # 仅开发环境的设计预览
+│   └── page.tsx         # 正式首页
+├── components/
+│   ├── deal-board.tsx   # 搜索、筛选、排序、刷新和本地状态
+│   └── deal-board.css   # 正式页与 demo 共用样式
+├── lib/
+│   ├── parse/           # 各来源解析器
+│   ├── db.ts            # SQLite 读写
+│   ├── refresh.ts       # 抓取编排、锁和失败隔离
+│   ├── scheduler.ts     # 启动首轮和定时刷新
+│   ├── classify.ts      # 标题关键词分类
+│   ├── filter-deals.ts  # 页面筛选和排序
+│   ├── board-view.ts    # 客户端响应校验
+│   ├── source-defs.ts   # 固定来源和允许域名
+│   └── types.ts         # 看板和来源数据类型
+tests/                   # 离线测试和脱敏夹具
+docs/                    # 开发、运维、数据质量和来源说明
+scripts/                 # 手动抓取报告等维护脚本
+data/                    # 本机 SQLite 数据，不提交到 Git
+```
+
+## 开发与验证
+
+安装依赖后，按下面顺序执行：
+
+```bash
+npm ci
+npm test
+npm run lint
+npx --no-install tsc --noEmit
+npm run build
+git diff --check
+```
+
+测试使用 `tests/fixtures/` 和合成样本，不访问外网，也不写入生产目录 `./data`。`npm run report` 会访问真实来源并写入 `DATA_DIR` 指向的数据库，只应在明确需要实时抓取时使用；不要把它指向正在使用的生产库。
+
+GitHub Actions 的常规 CI 会运行离线测试、Lint、生产构建和生产依赖审计。实时来源探测是单独的定时工作流，不作为 Pull Request 的必过检查，因为上游故障、反爬挑战或 feed 结构变化不应阻断无关代码的合并。
+
+动到页面时，还需要在 1440、1280 和 390 像素宽度下检查真实页面，确认没有控制台错误、失败请求、横向溢出、文本裁切或关键控件重叠。完整开发约定见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 运维和安全
+
+常用 Docker 命令：
+
+```bash
+docker compose -p daily-free-info ps
+docker compose -p daily-free-info logs -f --tail=200
+docker compose -p daily-free-info restart
+docker compose -p daily-free-info stop
+docker compose -p daily-free-info start
+```
+
+SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` 和 `deals.db-shm`。不要删除 `./data`，也不要只复制 `deals.db` 文件来做正在运行中的数据库备份；一致性备份和恢复步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
+
+生产容器以非 root 的 `node` 用户运行，宿主的 `./data` 必须对容器内 uid 1000 可写。不要用 `chmod 777` 解决权限问题。
+
+日志统一使用 `[deals]` 前缀的单行 JSON，记录轮次、来源成功与失败、耗时和失败分类，不记录标题正文、Cookie、请求头或浏览器个人状态。结构化日志字段见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+发现内容错误、失效条目或来源问题时，请附原文链接、发现时间和期望行为，通过仓库的 Issue 模板反馈。漏洞不要公开发布可复现细节，按 [SECURITY.md](SECURITY.md) 的私密报告流程提交。
+
+## 文档索引
+
+- [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)：来源、解析、分类、留存、时效和每轮验收规则
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)：架构、目录、命令、API 字段、日志和视觉验收
+- [docs/OPERATIONS.md](docs/OPERATIONS.md)：Docker 启停、排障、备份、恢复和回滚
+- [docs/SOURCES.md](docs/SOURCES.md)：来源清单、字段边界、使用条件和移除渠道
+- [CONTRIBUTING.md](CONTRIBUTING.md)：本地准备、测试约定和新增来源要求
+- [SECURITY.md](SECURITY.md)：漏洞报告和公网部署边界
+- [CHANGELOG.md](CHANGELOG.md)：版本变更记录
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)：第三方依赖许可说明
+- [AGENTS.md](AGENTS.md)：本仓库维护规则
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)，允许自由使用、修改与商用，派生版本可闭源；须保留版权与许可声明。第三方依赖的义务见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。内容来自第三方站点，其使用条件不受本仓库代码许可覆盖。
+本项目采用 [MIT License](LICENSE)。你可以自由使用、修改和商用，但需要保留版权与许可证声明。第三方依赖的许可义务见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。来源站点的内容和使用条件不由本仓库的 MIT 许可证覆盖。
