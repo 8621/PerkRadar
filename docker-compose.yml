@@ -22,6 +22,7 @@ services:
       PORT: "38471"
       DATA_DIR: /data
       JINA_API_KEY: ${JINA_API_KEY:-}
+      JINA_API_KEY_FILE: ${JINA_API_KEY_FILE:-}
     volumes:
       - ./data:/data
     healthcheck:

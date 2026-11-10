@@ -144,6 +144,16 @@ docker compose -p daily-free-info logs -f --tail=200
 docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 ```
 
+一轮抓取通常留下 1 条 `round_start`、7 条 `source_round` 和 1 条 `round_finished`；某源丢弃跨域名链接时另有 `offsite_link_dropped`。`source_round` 是写库事务提交、输出 `round_finished` 之后才按轮次逐条补写的，所以这 7 行的 `at` 与 `round_finished.at` 常常只差几毫秒，不代表抓取先后；各源真正的起止时间看 `attemptedAt` / `completedAt` 与 `durationMs`。`roundId` 与 `rounds` 表的 id 一致，把下面命令里的 37 换成要查的轮次即可：
+
+```bash
+docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '\[deals\]' | grep '"roundId":37'
+docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '"ok":false'
+docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '"event":"round_finished"' | tail -10
+```
+
+日志里的 `at` 是 UTC 的 ISO 时刻，`/api/health` 的 `fetchedAt` 也是 UTC；页面上的 `fetchedAtBeijing` 与 `lastUpdatedLabel` 按 `Asia/Shanghai` 显示，相差 8 小时不是故障。容器不设 `TZ`。
+
 | 事件 | 流向 | 字段 | 含义 |
 | --- | --- | --- | --- |
 | `round_start` | stdout | `trigger`（`manual` / `schedule`）、`sources` | 一轮开始，来源总数 |
@@ -160,6 +170,19 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 | `scheduled_refresh_skipped` | stdout | `reason` | 定时轮次因已有刷新正在运行而跳过 |
 | `scheduled_refresh_failed` | stderr | `error` | 定时轮次出现未分类错误 |
 
+`/api/health` 与 `/api/deals` 的轮次字段和日志同源：`fetchedAt` / `lastUpdatedAt` 是最近一次 `round_finished` 的结束时刻，`sourceHealth.ok` 是该轮 `ok: true` 的 `source_round` 数，`sources[].lastFetched` / `lastInserted` / `lastFinalUrl` / `lastError` 分别对应 `parsed` / `inserted` / `finalUrl` / `error`。`quality` 与 `anomalies` 是读库时按最近几轮历史算出来的，没有单独的日志事件；`nextRefreshAt` 由调度器写入，也不写日志。接口只给当前状态，逐轮细节回到日志看。
+
+手动刷新被拒绝时，`manual_refresh_rejected.status` 就是接口返回的 HTTP 状态，`code` 表示拦在哪一层：
+
+| `code` | `status` | 触发条件 |
+| --- | --- | --- |
+| `guard` | 403 / 400 | 同源校验失败，或 `Content-Length` 超过 2048 |
+| `rate_limit` | 429 | 同一 IP 10 分钟内触发超过 8 次 |
+| `COOLDOWN` | 429 | 距上次手动刷新不足 60 秒 |
+| `BUSY` | 409 | 已有一轮抓取在跑 |
+
+`manual_refresh_ok` 只在手动轮成功时输出，带 `roundStatus` 与 `activeCount`；定时轮没有这条事件。
+
 `source_round.reason` 是对失败错误的粗分类，排查时不必读原始错误串：
 
 | 值 | 匹配的失败 |
@@ -171,6 +194,15 @@ docker compose -p daily-free-info logs --no-color 2>&1 | grep '\[deals\]'
 | `unknown` | 其余未归类错误 |
 
 失败事件除表中字段外还带 `error`。失败原因要看 `source_round.reason` 与 `error`，不要只看 `round_finished.status`。每轮验收清单见 [DATA_QUALITY.md](DATA_QUALITY.md)。
+
+`docker compose logs` 只读当前容器。`up -d --build` 重建容器后，旧容器的日志不再可见；容器重启也会重新排程，日志里会出现一轮新的 `trigger: "schedule"`，轮次 id 接着库里已有的 id 递增，不从 1 开始。需要留档就先导出到仓库外：
+
+```bash
+mkdir -p "$HOME/free-info-archives"
+docker compose -p daily-free-info logs --no-color > "$HOME/free-info-archives/deals-$(date +%Y%m%d-%H%M%S).log"
+```
+
+仓库忽略 `reports/` 与 `*.log`，不要把日志提交进版本库；日志说明写在文档里。
 
 ## 本地修改流程
 

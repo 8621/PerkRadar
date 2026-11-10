@@ -48,6 +48,7 @@ curl -sS http://127.0.0.1:38481/api/health
 | 浏览器打不开 | `docker compose -p daily-free-info ps`。Docker 是否启动。端口是否用了 `HOST_PORT`。只应访问 `127.0.0.1` |
 | 健康 503，`数据库不可读` | `./data` 是否存在、当前用户能否写。不要删库；先按下面备份，再看权限。读库失败会记 `health_check_failed` / `deals_read_failed` 日志；`GET /api/deals` 同样会返回 503 `数据库不可读` |
 | 来源失败或超时 | `/api/health` 的 `failures`，以及 `docker compose -p daily-free-info logs` 里 `[deals]` 的 `source_round.reason` 与 `error`。25 秒超时记为「超时」（`timeout`）；HTTP 错误状态（`http_status`）、响应过大（`response_too_large`）、格式 / 解析错误（`malformed_response`）各有分类。LINUX DO 格式不对会写明可能被阻断。不要改去直连 |
+| 想按轮次看完整日志 | 用 [DEVELOPMENT.md](DEVELOPMENT.md)「结构化日志」里按 `roundId` 过滤的命令；`at` 是 UTC，页面时间是北京时间。`up -d --build` 重建容器后旧日志不可见，留档要先导出 |
 | 某源 0 条但 `lastOk` 为真 | 这次 feed 解析结果是空的，旧行是否还在由 7 天和到期规则决定 |
 | 页面时间看起来差 8 小时 | 页面标签按 `Asia/Shanghai` 格式化。容器未设置 `TZ`，库内是 Unix 毫秒。先对照 `fetchedAt` 和 `fetchedAtBeijing`，不要只看容器 `date` |
 | 手动刷新 409 | 已有一轮在跑，等它结束 |

@@ -4,7 +4,11 @@
 
 ## [Unreleased]
 
-以下内容描述当前源码行为；**尚未发版**（无新 tag、无新 Release）。
+- 文档：补充结构化日志的逐轮排查命令、事件与 `/api/health` / `/api/deals` 字段的对应关系，以及手动刷新拒绝事件的 `code` / `status` 组合；运维排障表新增按轮次看日志的入口，并说明重建容器后旧日志不再可见、留档需先导出。
+
+## [0.2.0] - 2026-11-09
+
+本版本源码已通过本地回归与构建检查；对应 GitHub Release 随本次发布创建。
 
 ### 界面重构与数据校验（2026-11-09）
 
@@ -28,7 +32,8 @@
 - 接口：`GET /api/deals` 数据库异常时返回 503 `数据库不可读` 并记 `deals_read_failed`；成功响应字段不变。三个接口都带 `cache-control: no-store`。
 - 安全：客户端 IP 默认忽略 `x-forwarded-for` / `x-real-ip`（一律归 `local`），仅 `TRUST_PROXY_HEADERS=1` 时信任转发头；带 `sec-fetch-site: cross-site` 的刷新请求拒绝 403；不带 `Origin` 的请求仍放行。
 - 日志：统一前缀 `[deals] {"event":...,"at":ISO,...}`，成功事件走 stdout、失败事件走 stderr，不含标题正文、Cookie、请求头或个人状态；事件清单见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
-- 工程：`engines.node >=22` 与 `.nvmrc`（22）；`tsconfig.json` / `eslint.config.mjs` 排除 `deployment-backups/`；`.dockerignore` 额外排除根目录 `*.md` 与 `scripts/`；两个 workflow 增加 `permissions: contents: read`，live-sources 的 cron 注明为 UTC。镜像仍以 `node`（uid 1000）非 root 运行。
+- 工程：`engines.node >=22` 与 `.nvmrc`（22）；`tsconfig.json` / `eslint.config.mjs` 排除 `deployment-backups/`；`.dockerignore` 排除根目录文档、`scripts/` 与 `.secrets/`；`.gitignore` 排除 `.secrets/`；两个 workflow 增加 `permissions: contents: read`，live-sources 的 cron 注明为 UTC。镜像仍以 `node`（uid 1000）非 root 运行。
+- Docker/Jina：根目录 `.env` 变为可选；Compose 将 `JINA_API_KEY` 和 `JINA_API_KEY_FILE` 传入容器。密钥文件须由运行环境单独挂载，镜像构建上下文不会包含 `.secrets/`。
 
 ### 已知边界
 
