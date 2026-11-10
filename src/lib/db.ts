@@ -51,8 +51,10 @@ export function openDatabase(filename: string): DatabaseSync {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
   }
   const db = new DatabaseSync(filename);
-  if (filename !== ":memory:") db.exec("PRAGMA journal_mode = WAL;");
+  // Set the wait first: switching to WAL and the schema statements below take a lock too,
+  // and without it they fail immediately when another process is mid-write.
   db.exec("PRAGMA busy_timeout = 5000;");
+  if (filename !== ":memory:") db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS deals (
       id INTEGER PRIMARY KEY,

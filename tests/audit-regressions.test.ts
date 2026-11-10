@@ -22,6 +22,8 @@ import { authorized, createSession, validSession } from "../src/lib/auth";
 import { loadPersonal, loadShowAll, STORAGE_KEY, SHOW_ALL_KEY, LEGACY_STORAGE_KEY, LEGACY_SHOW_ALL_KEY } from "../src/lib/personal-storage";
 import { probeExitCode } from "../src/lib/probe-outcome";
 import { snapshotDirectory } from "../src/lib/snapshot";
+import { resetGuards } from "../src/lib/guard";
+import { POST as sessionPost, DELETE as sessionDelete } from "../src/app/api/session/route";
 import { useMemoryDb } from "./helpers";
 
 const NOW = Date.parse("2026-11-11T00:00:00Z");
@@ -35,6 +37,59 @@ describe("audit regressions", { concurrency: false }, () => {
     assert.equal(classify("限免领取？", "v2ex"), "限免");
     assert.equal(classify("ChatGPT Pro 套餐", "v2ex"), "会员订阅");
     assert.equal(classifySignals("XX 限免更新", "v2ex").confidence, "high");
+  });
+  it("recognises common offer wording and keeps second-hand trades and questions out", () => {
+    assert.equal(classify("SYNTHETIC 域名双十一优惠，COM 限时不限量", "v2ex"), "低价优惠");
+    assert.equal(classify("SYNTHETIC 年付 6 折优惠券", "nodeseek"), "低价优惠");
+    assert.equal(classify("SYNTHETIC 中转站 新用户注册送 5 元体验额度", "linuxdo"), "免费白嫖");
+    assert.equal(classify("SYNTHETIC 话费羊毛 冲50返120", "linuxdo"), "免费白嫖");
+    assert.equal(classify("SYNTHETIC 口令红包", "linuxdo"), "免费白嫖");
+    for (const title of ["70 出 SYNTHETIC 6 折券", "+40收 SYNTHETIC 7.5折优惠券", "【出】SYNTHETIC 免费号", "清机出 SYNTHETIC 5 折", "总价80出 SYNTHETIC 5折 小杯", "SYNTHETIC 20x 拼车 80元一位 优惠"]) {
+      assert.equal(classify(title, "nodeseek"), "其他", title);
+      assert.equal(classifySignals(title, "nodeseek").contentType, "discussion", title);
+    }
+    for (const title of ["SYNTHETIC 要上特价是真的吗？", "请问哪里有免费的 SYNTHETIC API", "SYNTHETIC 首月免费试用吗？", "SYNTHETIC 为什么突然免费升级"]) {
+      assert.equal(classify(title, "nodeseek"), "其他", title);
+    }
+    // 出/收 inside ordinary words must not be read as a trade marker.
+    assert.equal(classify("SYNTHETIC 推出 5 折优惠", "appinn"), "低价优惠");
+    assert.equal(classify("SYNTHETIC 收到 100 元红包", "linuxdo"), "免费白嫖");
+  });
+  it("caps an absurd upstream Retry-After", () => {
+    assert.equal(retryAfter("999999999", NOW), 6 * 3_600_000);
+    assert.equal(retryAfter(new Date(NOW + 30 * 86_400_000).toUTCString(), NOW), 6 * 3_600_000);
+    assert.equal(retryAfter("not-a-date", NOW), 0);
+  });
+  it("sends a browser back to the login page on failure and clears the cookie on sign-out", async () => {
+    const previous = process.env.PERKRADAR_ACCESS_TOKEN;
+    const token = "synthetic-test-token-0123456789abcdef";
+    const form = (value: string, accept: string) => new Request("https://perks.example.com/api/session", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://perks.example.com", host: "perks.example.com", accept },
+      body: new URLSearchParams({ token: value }),
+    });
+    try {
+      process.env.PERKRADAR_ACCESS_TOKEN = token;
+      resetGuards();
+      const html = await sessionPost(form("wrong", "text/html,application/xhtml+xml"));
+      assert.equal(html.status, 303);
+      assert.equal(html.headers.get("location"), "/login?error=invalid");
+      assert.equal(html.headers.get("set-cookie"), null);
+      const json = await sessionPost(form("wrong", "application/json"));
+      assert.equal(json.status, 401);
+      const ok = await sessionPost(form(token, "text/html"));
+      assert.equal(ok.status, 303);
+      assert.equal(ok.headers.get("location"), "/");
+      assert.match(ok.headers.get("set-cookie") ?? "", /perkradar-session=.+HttpOnly/i);
+      const out = sessionDelete(new Request("https://perks.example.com/api/session", { method: "DELETE", headers: { origin: "https://perks.example.com", host: "perks.example.com" } }));
+      assert.equal(out.status, 204);
+      assert.match(out.headers.get("set-cookie") ?? "", /perkradar-session=;.*Max-Age=0/i);
+      const crossSite = sessionDelete(new Request("https://perks.example.com/api/session", { method: "DELETE", headers: { "sec-fetch-site": "cross-site" } }));
+      assert.equal(crossSite.status, 403);
+    } finally {
+      resetGuards();
+      if (previous === undefined) delete process.env.PERKRADAR_ACCESS_TOKEN; else process.env.PERKRADAR_ACCESS_TOKEN = previous;
+    }
   });
   it("fails closed on complete and partial Epic schema drift", () => {
     for (const elements of [[{}], [{ ...paid, price: { totalPrice: { newDiscountPrice: 0 } } }], [{ ...paid, price: { totalPrice: { discountPrice: "0" } } }], [paid, {}], [{ ...paid, promotions: { promotionalOffers: "changed" } }]]) {
@@ -97,6 +152,13 @@ describe("audit regressions", { concurrency: false }, () => {
       assert.equal(denied.headers.get("location"), "https://perks.example.com/login");
       const accepted = await middleware(new NextRequest("https://perks.example.com/", { headers: { authorization: `Bearer ${token}` } }));
       assert.equal(accepted.status, 200);
+      // Behind a reverse proxy request.url is the listen address; the visitor's Host must win.
+      const proxied = await middleware(new NextRequest("http://localhost:38471/", { headers: { host: "perks.example.com", "x-forwarded-proto": "https" } }));
+      assert.equal(proxied.headers.get("location"), "https://perks.example.com/login");
+      const local = await middleware(new NextRequest("http://localhost:38471/", { headers: { host: "127.0.0.1:38481" } }));
+      assert.equal(local.headers.get("location"), "http://127.0.0.1:38481/login");
+      const hostile = await middleware(new NextRequest("http://localhost:38471/", { headers: { host: "evil.example/x?y" } }));
+      assert.equal(hostile.headers.get("location"), "http://localhost:38471/login");
     } finally { if (previous === undefined) delete process.env.PERKRADAR_ACCESS_TOKEN; else process.env.PERKRADAR_ACCESS_TOKEN = previous; }
   });
   it("migrates old browser keys without deleting fallback, tolerating quota failures", () => {

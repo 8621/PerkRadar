@@ -1,4 +1,4 @@
-import { MAX_RESPONSE_CHARS, USER_AGENT } from "./config";
+import { MAX_RESPONSE_CHARS, MAX_RETRY_AFTER_MS, USER_AGENT } from "./config";
 
 type MinimalHeaders = { get(name: string): string | null };
 
@@ -54,10 +54,14 @@ async function readLimitedBody(response: FetchedResponse): Promise<string> {
 export class HttpError extends Error {
   constructor(public status: number, public retryAfterMs = 0) { super(`HTTP ${status}${status === 429 ? " rate_limited" : ""}`); }
 }
+/**
+ * Parse Retry-After (delta seconds or an HTTP date) into milliseconds.
+ * Capped: the header is upstream-controlled, and an absurd value must not pause a source for days.
+ */
 export function retryAfter(value: string | null, now = Date.now()): number {
   if (!value) return 0;
   const delay = /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value) * 1000 : Date.parse(value) - now;
-  return Number.isFinite(delay) ? Math.max(0, delay) : 0;
+  return Number.isFinite(delay) ? Math.min(MAX_RETRY_AFTER_MS, Math.max(0, delay)) : 0;
 }
 export async function fetchText(
   url: string,

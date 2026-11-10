@@ -33,4 +33,6 @@ EXPOSE 38471
 # must still be writable by that uid; see docs/OPERATIONS.md.
 USER node
 
-CMD ["npm", "run", "start"]
+# Start node directly instead of through npm: SIGTERM from `docker stop` then reaches
+# the server, which exits cleanly and releases its scheduler lease.
+CMD ["node", "scripts/serve.mjs", "start"]

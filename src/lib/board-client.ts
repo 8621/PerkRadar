@@ -2,13 +2,23 @@ import { BOARD_MAX_ITEMS } from "./config";
 import { normalizeBoardState } from "./board-view";
 import { RETENTION_MS } from "./config";
 import type { BoardState } from "./types";
+
+/** The session cookie expired or the token changed; the page should send the person to /login. */
+export class AuthExpiredError extends Error {
+  constructor() {
+    super("登录已过期，请重新登录");
+    this.name = "AuthExpiredError";
+  }
+}
+
 export async function readBoard(signal: AbortSignal): Promise<BoardState> {
   let board: BoardState | null = null;
   let offset = 0;
   // A page sequence must come from one refresh generation; retry next poll if it changes.
   for (;;) {
     const response = await fetch(`/api/deals?limit=1000&offset=${offset}`, { cache: "no-store", signal });
-    if (!response.ok) throw new Error(response.status === 401 ? "登录已过期，请重新登录" : "数据暂时不可用");
+    if (response.status === 401) throw new AuthExpiredError();
+    if (!response.ok) throw new Error("数据暂时不可用");
     const page = normalizeBoardState(await response.json());
     if (!page) throw new Error("看板数据格式异常");
     if (!board) board = { ...page, deals: [] };

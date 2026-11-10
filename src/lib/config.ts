@@ -7,6 +7,21 @@ export const REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000;
 /** Delay before the first scheduled round after the process starts. */
 export const SCHEDULER_BOOT_DELAY_MS = 4_000;
 
+/** How often the scheduler compares the wall clock with the due time and renews its lease. */
+export const SCHEDULER_TICK_MS = 20_000;
+
+/** Scheduler lease lifetime. A killed process blocks its successor for at most this long. */
+export const SCHEDULER_LEASE_TTL_MS = 90_000;
+
+/** Retry delay when a scheduled slot found another refresh already running. */
+export const SCHEDULER_BUSY_RETRY_MS = 60_000;
+
+/** First retry delay after a round where every source failed; doubles up to the interval. */
+export const SCHEDULER_FAILED_RETRY_MS = 10 * 60 * 1000;
+
+/** Upper bound for an upstream Retry-After, so a bogus header cannot pause a source for days. */
+export const MAX_RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
+
 /** Manual refresh cooldown. Scheduled runs are not subject to it. */
 export const MANUAL_COOLDOWN_MS = 60_000;
 

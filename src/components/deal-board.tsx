@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Clock3,
   Info,
+  LogOut,
   Radar,
   RefreshCw,
   Search,
@@ -18,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { readBoard, expireBoard } from "@/lib/board-client";
+import { AuthExpiredError, readBoard, expireBoard } from "@/lib/board-client";
 import { loadPersonal, loadShowAll, STORAGE_KEY, SHOW_ALL_KEY, LEGACY_STORAGE_KEY, LEGACY_SHOW_ALL_KEY, type Personal } from "@/lib/personal-storage";
 import { filterDeals, type DealSort } from "@/lib/filter-deals";
 import { normalizeBoardState } from "@/lib/board-view";
@@ -56,8 +57,11 @@ function formatFailure(failure: { sourceName: string; error: string }): string {
   return `${failure.sourceName}（${failure.error}）`;
 }
 
-/** 正式首页：服务端给初始快照，客户端挂载后展开，保留真实数据和本机状态。 */
-export function DealBoard({ initial }: { initial: BoardState }) {
+/**
+ * 正式首页：服务端给初始快照，客户端挂载后展开，保留真实数据和本机状态。
+ * authEnabled 为真时显示「退出」，并在会话过期后把人送回登录页。
+ */
+export function DealBoard({ initial, authEnabled = false }: { initial: BoardState; authEnabled?: boolean }) {
   const [board, setBoard] = useState<BoardState>(() => normalizeBoardState(initial) ?? initial);
   const [query, setQuery] = useState("");
   const [sourceId, setSourceId] = useState<string | "all">("all");
@@ -112,7 +116,12 @@ export function DealBoard({ initial }: { initial: BoardState }) {
       try {
         const next = await readBoard(controller.signal);
         if (!stopped) { setBoard(next); setPollError(false); }
-      } catch { if (!stopped) setPollError(true); }
+      } catch (error) {
+        if (stopped) return;
+        // 会话过期后继续轮询只会一直 401；直接回登录页，收藏和已领在本机存储里不受影响。
+        if (error instanceof AuthExpiredError) { stopped = true; window.location.assign("/login"); return; }
+        setPollError(true);
+      }
       finally { clearTimeout(timeout); inFlight = null; }
     };
     const onVisible = () => { if (document.visibilityState !== "hidden") void tick(); };
@@ -157,6 +166,7 @@ export function DealBoard({ initial }: { initial: BoardState }) {
     try {
       const response = await fetch("/api/refresh", { method: "POST", cache: "no-store", signal: AbortSignal.timeout(35_000) });
       const data: unknown = await response.json().catch(() => null);
+      if (response.status === 401) { window.location.assign("/login"); return; }
       if (!response.ok) {
         setMessage(readError(data) || "刷新没有完成");
         return;
@@ -173,6 +183,15 @@ export function DealBoard({ initial }: { initial: BoardState }) {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  async function signOut() {
+    try {
+      await fetch("/api/session", { method: "DELETE", cache: "no-store" });
+    } catch {
+      // 断网时 cookie 清不掉；仍然回登录页，会话最迟 8 小时后自行过期。
+    }
+    window.location.assign("/login");
   }
 
   function resetFilters() {
@@ -247,6 +266,9 @@ export function DealBoard({ initial }: { initial: BoardState }) {
             <Button className="board-refresh" data-testid="refresh" onClick={refresh} disabled={busy} aria-busy={busy}>
               <RefreshCw aria-hidden="true" />{busy ? "刷新中" : "立即刷新"}
             </Button>
+            {authEnabled ? (
+              <Button variant="ghost" data-testid="sign-out" onClick={signOut}><LogOut aria-hidden="true" />退出</Button>
+            ) : null}
           </div>
         </header>
 

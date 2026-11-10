@@ -62,7 +62,7 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 
 `npm run dev` 是 `next dev`，带 Turbopack，默认监听 `127.0.0.1:38471`，显式HOST/PORT可覆盖。热更新用 `globalThis` 避免重复登记定时器。开发时数据库默认是项目下的 `data/deals.db`。
 
-生产容器执行的是镜像里的 `npm run start`，也就是 `next start`，容器内端口固定 38471。Compose 把宿主的 `127.0.0.1:${HOST_PORT:-38471}` 转到这个端口。`DATA_DIR=/data`，对应宿主的 `./data`。
+生产容器直接执行 `node scripts/serve.mjs start`（和 `npm run start` 是同一个入口，但不经过 npm，`docker stop` 的 SIGTERM 能直达进程，退出时释放调度租约），容器内端口固定 38471。Compose 把宿主的 `127.0.0.1:${HOST_PORT:-38471}` 转到这个端口。`DATA_DIR=/data`，对应宿主的 `./data`。
 
 `next.config.mjs` 是普通 JavaScript，设置 `serverExternalPackages: ["node:sqlite"]`，并允许NEXT_DIST_DIR隔离构建输出。Dockerfile 在 `npm run build` 之后执行 `npm prune --omit=dev`。若仍使用 `next.config.ts`，`next start` 发现没有 TypeScript 就会联网安装它。这是已经修掉的启动行为，不要改回 `.ts` 配置。
 
@@ -130,7 +130,7 @@ Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 
 不带 `Origin` 的请求仍放行，[OPERATIONS.md](OPERATIONS.md) 的本机 `curl` 排障命令依赖这一点。客户端 IP 默认一律归为 `local`，忽略 `x-forwarded-for` / `x-real-ip`；只有 `TRUST_PROXY_HEADERS=1` 时才信任转发头，详见 [SECURITY.md](../SECURITY.md)。这些防护都不是身份校验。
 
-定时抓取不走这个 60 秒冷却，但会和手动抓取共用进程内的锁。锁只在一个 Node 进程里有效，所以不能开第二个容器。
+定时抓取不走这个 60 秒冷却，但会和手动抓取共用进程内的锁和 SQLite 里的 `refresh` 租约。撞上正在跑的一轮时，定时轮 60 秒后再试，不等下一个 2 小时。租约只在同一台机器的同一个 SQLite 文件上有效，仍然只部署一个实例。
 
 ## 结构化日志
 
@@ -172,6 +172,10 @@ docker compose -p perkradar logs --no-color --tail=400 2>&1 | grep '"event":"rou
 | `manual_refresh_rejected` | stdout | `code`、`status` | 被限流 / 冷却 / 同源防护拒绝；`code` 为 `rate_limit`、`guard`，或 `BUSY` / `COOLDOWN` |
 | `manual_refresh_failed` | stderr | `error` | 手动刷新出现未分类错误 |
 | `scheduled_refresh_skipped` | stdout | `reason` | 定时轮次因已有刷新正在运行而跳过 |
+| `scheduled_refresh_retry` | stdout | `outcome`（`busy` / `failed` / `error`）、`retryInMs` | 这一轮没用上或全部来源失败，提前到 `retryInMs` 之后再试 |
+| `scheduler_lease_acquired` | stdout | `recovered` | 本进程拿到调度租约；`recovered` 为真表示之前在等别的持有者 |
+| `scheduler_lease_waiting` | stdout | `recovered` | 调度租约在别的持有者手里（上个进程被强杀后最多 90 秒，或确实有第二个实例），本进程不抓取、继续等 |
+| `scheduler_lease_error` / `scheduler_meta_failed` | stderr | `error` | 读写租约或下次计划时数据库出错，下一个 20 秒检查点重试 |
 | `scheduled_refresh_failed` | stderr | `error` | 定时轮次出现未分类错误 |
 
 `/api/health` 与 `/api/deals` 的轮次字段和日志同源：`fetchedAt` / `lastUpdatedAt` 是最近一次 `round_finished` 的结束时刻，`sourceHealth.ok` 是该轮 `ok: true` 的 `source_round` 数，`sources[].lastFetched` / `lastInserted` / `lastFinalUrl` / `lastError` 分别对应 `parsed` / `inserted` / `finalUrl` / `error`。`quality` 与 `anomalies` 是读库时按最近几轮历史算出来的，没有单独的日志事件；`nextRefreshAt` 由调度器写入，也不写日志。接口只给当前状态，逐轮细节回到日志看。
@@ -222,7 +226,7 @@ docker compose -p perkradar logs --no-color > "$HOME/perkradar-archives/deals-$(
 
 这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。验收顺序、真实数据与异常路径见 [CONTRIBUTING.md](../CONTRIBUTING.md)「改动流程」与本节清单；单次验收记录属本地产物，不随公开仓库发布。
 
-正式首页按 `/demo` 的布局：顶部只有品牌与「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。`/demo` 是本地 dev 预览的设计预览页（7 条示例，其中 1 条「其他」默认隐藏，「只看新增」仍为 3 条，开关只在当前页面内存生效、刷新重置），只在源码与 dev 预览可用；生产镜像包含首页、登录页和数据/认证API，不含 `/demo`。正式页与它共用 `src/components/deal-board.css`。
+正式首页按 `/demo` 的布局：顶部只有品牌与「立即刷新」（开启访问令牌时多一个「退出」）；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。`/demo` 是本地 dev 预览的设计预览页（7 条示例，其中 1 条「其他」默认隐藏，「只看新增」仍为 3 条，开关只在当前页面内存生效、刷新重置），只在源码与 dev 预览可用；生产镜像包含首页、登录页和数据/认证API，不含 `/demo`。正式页与它共用 `src/components/deal-board.css`。
 
 - 1440px 和 1280px：左侧为筛选与状态栏，主区为「信息列表」卡片；左栏文字不重叠、不裁切。不要退回成居中的窄手机条。
 - 390px：单列，无横向溢出；顶部信息不裁切、卡片底部控件不溢出；来源和类别不要堆成好几屏才能看到第一条。
@@ -234,4 +238,4 @@ docker compose -p perkradar logs --no-color > "$HOME/perkradar-archives/deals-$(
 - 空库、筛选为空、轮询接口失败、本地状态写入失败各有区分提示，不能用假条目填上，也不能让几种状态看起来一样。
 - 命令与浏览器验收记录：`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷，390px 无横向溢出。测试项数以 `npm test` 输出为准。
 
-认证先经过 middleware 的 WebCrypto UI 门禁再进入页面，避免 loading.tsx 流式响应先发送200；API保留独立Node认证。/login公开，/api/session只接受同源限流表单。源码npm生产构建可能列出 /demo，但生产布局返回404，内容只在开发模式提供；Docker通过.dockerignore完全排除该路由。
+认证先经过 middleware 的 WebCrypto UI 门禁再进入页面，避免 loading.tsx 流式响应先发送200；API保留独立Node认证。/login公开，未开启认证或已登录时直接回首页；/api/session 的 POST 只接受同源限流表单，浏览器表单失败时 303 回 `/login?error=<代码>` 显示原因，脚本仍拿到 JSON 状态码；DELETE 清掉本浏览器的会话 cookie（会话是签名而非服务端存储，要让所有会话失效只能换令牌）。未登录跳转按请求的 Host 和代理给的 `x-forwarded-proto` 拼地址，所以反向代理后面跳到的是访客域名而不是监听地址。源码npm生产构建可能列出 /demo，但生产布局返回404，内容只在开发模式提供；Docker通过.dockerignore完全排除该路由。

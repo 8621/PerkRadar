@@ -264,6 +264,18 @@
 .demo-footer .board-footer-note { margin: 0 0 4px; }
 .demo-footer [data-slot="button"] { min-height: 0; height: auto; padding: 0; border-radius: 0; background: transparent; color: var(--primary); }
 .board-error-card .board-refresh { margin-top: 20px; }
+/* 登录页：单张居中卡片，和看板共用同一套浅色变量。 */
+.board-login { display: flex; flex-direction: column; gap: 12px; width: min(420px, calc(100% - 32px)); margin: 0 auto; padding: 32px 28px; position: relative; top: 12dvh; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.board-login h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
+.board-login-hint { margin: 0; color: var(--muted-foreground); }
+.board-login .board-alert { flex: none; }
+.board-login-form { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.board-login-form label { font-size: 13px; font-weight: 500; }
+.board-login-form [data-slot="input"] { height: 44px; border-radius: 12px; background: var(--card); }
+.board-login-form [data-slot="button"] { margin-top: 8px; background: var(--primary); color: var(--primary-foreground); }
+@media (max-width: 760px) {
+  .board-login { top: 6dvh; padding: 24px 20px; }
+}
 @media (max-width: 760px) {
   .board-alert-strip > .board-alert { flex-basis: 100%; }
 }
