@@ -1,3 +1,4 @@
+import { classify } from "./classify";
 import { EXPIRING_SOON_MS, SEVERE_AFTER_MS, STALE_AFTER_MS } from "./config";
 import {
   getMeta,
@@ -11,6 +12,7 @@ import {
 import { isExpiringSoon, isStale } from "./retention";
 import { toPlain } from "./text";
 import { isRefreshRunning } from "./refresh-lock";
+import { jinaMissingKey } from "./sources";
 import { SOURCE_DEFS, sourceName } from "./source-defs";
 import { formatBeijing } from "./time";
 import type { BoardState, Category, DealDTO, SourceStatus } from "./types";
@@ -46,7 +48,7 @@ export function getBoardState(now = Date.now()): BoardState {
     // of rewriting the user's database; toPlain is idempotent.
     title: toPlain(deal.title),
     summary: toPlain(deal.summary),
-    category: asCategory(deal.category),
+    category: process.env.PERKRADAR_STORED_CATEGORIES === "1" ? asCategory(deal.category) : classify(deal.title, deal.sourceId),
     sourceId: deal.sourceId,
     sourceName: sourceName(deal.sourceId),
     publishedAt: deal.publishedAt,
@@ -95,6 +97,10 @@ export function getBoardState(now = Date.now()): BoardState {
       lastInserted: run ? run.insertedCount : null,
       lastFinalUrl: run?.finalUrl ?? null,
       quality: qualityBySource.get(source.id),
+      diagnostic: /circuit_open/.test(run?.error ?? "") ? "circuit_open"
+        : /HTTP 429|rate_limited/.test(run?.error ?? "") ? "rate_limited"
+        : qualityBySource.get(source.id)?.structureAnomaly ? "structure_anomaly"
+        : source.id === "linuxdo" && jinaMissingKey() ? "missing_key" : null,
     };
   });
 

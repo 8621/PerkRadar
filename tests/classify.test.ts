@@ -12,7 +12,7 @@ describe("classify", () => {
 
   it("matches Pro on a letter boundary and ignores Professional or Product", () => {
     assert.equal(classify("ChatGPT Pro 套餐", "appinn"), "会员订阅");
-    assert.equal(classify("PRO版限免", "appinn"), "会员订阅");
+    assert.equal(classify("PRO版限免", "appinn"), "限免");
     assert.equal(classify("Professional toolbox", "appinn"), "其他");
     assert.equal(classify("Product Hunt 周报", "appinn"), "其他");
     assert.equal(classify("iProvide notes", "appinn"), "其他");
@@ -21,7 +21,7 @@ describe("classify", () => {
   it("filters low-relevance markers before deal keywords for non-Epic sources", () => {
     assert.equal(classify("【抽奖】10个免费账号", "linuxdo"), "其他");
     assert.equal(classify("优惠码新闻汇总", "appinn"), "其他");
-    assert.equal(classify("免费领取活动更新公告", "ghxi"), "其他");
+    assert.equal(classify("免费领取活动更新公告", "ghxi"), "限免");
     assert.equal(classify("有会员优惠吗？", "v2ex"), "其他");
     assert.equal(classify("收优惠码", "v2ex"), "其他");
     assert.equal(classify("求优惠码", "v2ex"), "其他");

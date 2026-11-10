@@ -44,8 +44,6 @@ export function snapshotDirectory(): string | null {
   const configured = process.env.DEALS_SNAPSHOT_DIR;
   if (configured === "off") return null;
   if (configured && configured.trim()) return configured;
-  const store = "/cursor/stores/self";
-  if (fs.existsSync(store)) return path.join(store, "deals");
   return null;
 }
 

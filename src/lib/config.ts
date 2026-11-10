@@ -27,7 +27,10 @@ export const DANGLING_ROUND_MS = 3 * 60 * 1000;
 export const STALE_AFTER_MS = 2.5 * 60 * 60 * 1000;
 export const SEVERE_AFTER_MS = 4 * 60 * 60 * 1000;
 
-export const USER_AGENT = "Mozilla/5.0 (compatible; DailyDealsBot/1.0)";
+export const USER_AGENT = "PerkRadar/0.2.0 (+https://github.com/luobinger/PerkRadar)";
+export const BOARD_PAGE_SIZE = 500;
+export const BOARD_MAX_ITEMS = 100_000;
+export const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_RESPONSE_CHARS = 1_500_000;
 export const MAX_FEED_ITEMS = 2_000;
 export const MAX_URL_CHARS = 2_048;

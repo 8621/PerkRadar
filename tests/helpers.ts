@@ -1,3 +1,4 @@
+import { resetCircuitsForTests } from "../src/lib/source-resilience";
 import { openDatabase, useDatabase } from "../src/lib/db";
 import { resetGuards } from "../src/lib/guard";
 import { resetRefreshLockForTests } from "../src/lib/refresh-lock";
@@ -6,6 +7,7 @@ export function useMemoryDb(): void {
   useDatabase(openDatabase(":memory:"));
   resetRefreshLockForTests();
   resetGuards();
+  resetCircuitsForTests();
   process.env.DEALS_SNAPSHOT_DIR = "off";
 }
 

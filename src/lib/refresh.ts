@@ -1,6 +1,8 @@
 import { classify } from "./classify";
-import { MANUAL_COOLDOWN_MS, SOURCE_TIMEOUT_MS } from "./config";
+import { randomUUID } from "node:crypto";
+import { HISTORY_RETENTION_MS, MANUAL_COOLDOWN_MS, SOURCE_TIMEOUT_MS } from "./config";
 import {
+  acquireLease, renewLease, releaseLease, pruneHistory,
   beginImmediate,
   commit,
   deleteDeal,
@@ -229,7 +231,11 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
     throw new RefreshRejected("BUSY", "已有刷新进行中");
   }
 
+  const leaseOwner = randomUUID();
+  let persistentLock = false;
   try {
+  persistentLock = acquireLease("refresh", leaseOwner, Date.now(), 180_000);
+  if (!persistentLock) throw new RefreshRejected("BUSY", "另一进程已有刷新进行中");
   if (options.trigger === "manual") {
     const last = getMeta("last_manual_at");
     if (last && now - Number(last) < cooldownMs) {
@@ -247,9 +253,11 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       timeoutMs: options.timeoutMs ?? SOURCE_TIMEOUT_MS,
       fetchImpl: options.fetchImpl ?? fetch,
     });
+    if (!renewLease("refresh", leaseOwner, Date.now(), 180_000)) throw new Error("刷新租约已失效，丢弃本轮结果");
     beginImmediate();
     let roundId = 0;
     try {
+      if (!renewLease("refresh", leaseOwner, Date.now(), 180_000)) throw new Error("刷新租约已失效，丢弃本轮结果");
       roundId = insertRound(options.trigger, now);
       let totalInserted = 0;
       for (const source of loaded) totalInserted += applySource(source, roundId, now);
@@ -257,6 +265,8 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       const okCount = loaded.filter((source) => source.ok).length;
       const status = okCount === loaded.length ? "success" : okCount === 0 ? "failed" : "partial";
       finishRound(roundId, Date.now(), status);
+      pruneHistory(now - HISTORY_RETENTION_MS);
+      if (!renewLease("refresh", leaseOwner, Date.now(), 180_000)) throw new Error("刷新租约已失效，回滚本轮结果");
       commit();
       logEvent("round_finished", {
         roundId,
@@ -291,7 +301,7 @@ export async function runRefresh(options: RefreshOptions): Promise<BoardState> {
       throw error;
     }
   } finally {
-    releaseRefreshLock();
+    try { if (persistentLock) releaseLease("refresh", leaseOwner); } finally { releaseRefreshLock(); }
   }
   const board = getBoardState(now);
   try {

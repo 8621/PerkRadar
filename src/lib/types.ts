@@ -34,6 +34,7 @@ export type SourceStatus = {
   lastInserted: number | null;
   lastFinalUrl: string | null;
   quality?: SourceQuality;
+  diagnostic?: "missing_key" | "rate_limited" | "structure_anomaly" | "circuit_open" | null;
 };
 
 export type DealDTO = {
@@ -82,4 +83,5 @@ export type BoardState = {
   /** Optional so callers building a partial board in tests stay compatible. */
   freshness?: FreshnessDTO;
   anomalies?: string[];
+  pagination?: { offset: number; limit: number; total: number; hasMore: boolean };
 };

@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
-import { FUTURE_PUBLISH_TOLERANCE_MS, MAX_FEED_ITEMS, MIN_PUBLISH_MS } from "../config";
+import { MAX_FEED_ITEMS } from "../config";
+import { publishTime } from "../publish-time";
 import { cleanTitle, excerpt } from "../text";
 import type { ParsedItem } from "../types";
 
@@ -49,11 +50,7 @@ function asList(node: unknown): unknown[] {
 function parseTime(value: unknown, now: number): number | null {
   const text = nodeText(value).trim();
   if (!text) return null;
-  const ms = Date.parse(text);
-  if (!Number.isFinite(ms)) return null;
-  // A future or implausible date would pin an item to the top and never expire.
-  if (ms < MIN_PUBLISH_MS || ms > now + FUTURE_PUBLISH_TOLERANCE_MS) return null;
-  return ms;
+  return publishTime(text, now);
 }
 
 function itemFromRecord(record: Record<string, unknown>, now: number): ParsedItem | null {

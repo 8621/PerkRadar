@@ -1,5 +1,6 @@
 import { REFRESH_INTERVAL_MS, SCHEDULER_BOOT_DELAY_MS } from "./config";
-import { setMeta } from "./db";
+import { randomUUID } from "node:crypto";
+import { acquireLease, latestFinishedRound, releaseLease, renewLease, setMeta } from "./db";
 import { logEvent, logFailure } from "./log";
 import { RefreshRejected, runRefresh, type RefreshOptions } from "./refresh";
 import type { BoardState } from "./types";
@@ -8,6 +9,8 @@ type SchedulerGlobal = typeof globalThis & {
   __dealsSchedulerOn?: boolean;
   __dealsScheduler?: ReturnType<typeof setInterval>;
   __dealsBoot?: ReturnType<typeof setTimeout>;
+  __dealsHeartbeat?: ReturnType<typeof setInterval>;
+  __dealsLeaseOwner?: string;
 };
 
 function globals(): SchedulerGlobal {
@@ -46,14 +49,27 @@ export function startScheduler(options?: {
   if (!shouldStartScheduler()) return;
   const g = globals();
   if (g.__dealsSchedulerOn) return;
+  const owner = randomUUID();
+  if (!acquireLease("scheduler", owner, Date.now(), 90_000)) throw new Error("另一个 PerkRadar 实例正在运行；请保持单实例");
+  g.__dealsLeaseOwner = owner;
+  g.__dealsHeartbeat = setInterval(() => {
+    try {
+      if (!renewLease("scheduler", owner, Date.now(), 90_000)) throw new Error("调度租约失效");
+    } catch (error) { logFailure("scheduler_lease_lost", error); stopSchedulerForTests(); }
+  }, 20_000);
+  g.__dealsHeartbeat.unref?.();
   g.__dealsSchedulerOn = true;
   const run = options?.run ?? runRefresh;
   const skipBoot = process.env.DEALS_SKIP_BOOT === "1" && options?.bootDelayMs == null;
-  const bootDelayMs = options?.bootDelayMs ?? SCHEDULER_BOOT_DELAY_MS;
+  const last = latestFinishedRound()?.startedAt;
+  const remaining = last == null ? 0 : Math.max(0, REFRESH_INTERVAL_MS - (Date.now() - last));
+  const bootDelayMs = options?.bootDelayMs ?? Math.max(SCHEDULER_BOOT_DELAY_MS, remaining);
   const intervalMs = options?.intervalMs ?? REFRESH_INTERVAL_MS;
 
+  const ownsLease = () => renewLease("scheduler", owner, Date.now(), 90_000);
   const arm = () => {
     g.__dealsScheduler = setInterval(() => {
+      if (!ownsLease()) { stopSchedulerForTests(); return; }
       const nextAt = Date.now() + intervalMs;
       setMeta("next_refresh_at", String(nextAt));
       void runScheduled(run);
@@ -67,7 +83,8 @@ export function startScheduler(options?: {
     return;
   }
   g.__dealsBoot = setTimeout(() => {
-    void runScheduled(run).finally(arm);
+    if (!ownsLease()) { stopSchedulerForTests(); return; }
+    if (g.__dealsSchedulerOn) void runScheduled(run).finally(() => { if (g.__dealsSchedulerOn) arm(); });
   }, bootDelayMs);
   g.__dealsBoot.unref?.();
   setMeta("next_refresh_at", String(Date.now() + bootDelayMs));
@@ -75,6 +92,10 @@ export function startScheduler(options?: {
 
 export function stopSchedulerForTests(): void {
   const g = globals();
+  if (g.__dealsHeartbeat) clearInterval(g.__dealsHeartbeat);
+  if (g.__dealsLeaseOwner) { try { releaseLease("scheduler", g.__dealsLeaseOwner); } catch { /* unavailable DB: lease expires naturally */ } }
+  g.__dealsHeartbeat = undefined;
+  g.__dealsLeaseOwner = undefined;
   if (g.__dealsBoot) clearTimeout(g.__dealsBoot);
   if (g.__dealsScheduler) clearInterval(g.__dealsScheduler);
   g.__dealsBoot = undefined;

@@ -51,6 +51,14 @@ async function readLimitedBody(response: FetchedResponse): Promise<string> {
   return body;
 }
 
+export class HttpError extends Error {
+  constructor(public status: number, public retryAfterMs = 0) { super(`HTTP ${status}${status === 429 ? " rate_limited" : ""}`); }
+}
+export function retryAfter(value: string | null, now = Date.now()): number {
+  if (!value) return 0;
+  const delay = /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value) * 1000 : Date.parse(value) - now;
+  return Number.isFinite(delay) ? Math.max(0, delay) : 0;
+}
 export async function fetchText(
   url: string,
   ctx: { fetchImpl: FetchLike; signal: AbortSignal },
@@ -66,7 +74,10 @@ export async function fetchText(
     },
   });
   // Reject error statuses before downloading their (potentially huge) body.
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new HttpError(response.status, retryAfter(response.headers?.get("retry-after") ?? null));
+  }
   const body = await readLimitedBody(response);
   return { body, finalUrl: response.url || url, status: response.status };
 }
