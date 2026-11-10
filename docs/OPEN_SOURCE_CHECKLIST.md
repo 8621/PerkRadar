@@ -1,7 +1,7 @@
 # PerkRadar 开源状态清单
 
 > 本文只记录**当前状态**与仍需遵守的判据，不是施工顺序或交付记录。口径：**上传 GitHub 只代表源码公开，不代表网站已公网部署。**
-> 维护日期：2026-11-11（北京时间）。品牌对外统一为 `PerkRadar`，版本遵循语义化版本；具体行为与部署步骤以 [README.md](../README.md) 和当前源码为准。
+> 维护日期：2026-11-11（北京时间）。具体行为与部署步骤以 [README.md](../README.md) 和当前源码为准。
 
 ## 1. 发布与仓库状态
 
@@ -14,15 +14,13 @@
 
 `package.json` 为 `perkradar@0.2.0`、`license: MIT`。仓库发布状态与工作区改动要分开看：`[Unreleased]` 描述当前源码，不是已发布版本的行为。
 
-## 2. 品牌与运行标识
+## 2. 运行配置与数据兼容
 
-项目名称、GitHub 仓库名和本地项目目录统一为 `PerkRadar`，仓库为 [luobinger/PerkRadar](https://github.com/luobinger/PerkRadar)。本地归档文件统一使用 `PerkRadar-` 前缀；`README.md` 等标准文档文件名保持仓库约定。
-
-- npm 包名、Compose 项目名和容器名使用小写 `perkradar`，镜像为 `perkradar:local`，命令统一使用 `-p perkradar`。
-- 卷 `./data`、`deals.db` 及 WAL/SHM 文件、SQLite 表名与列名、`SOURCE_DEFS` 的 id、端口 38471 不随品牌改名。
+- Compose 项目名与容器名为 `perkradar`，镜像为 `perkradar:local`，容器内端口为 38471。
+- 持久化目录为 `./data`，包含 `deals.db` 及 WAL/SHM 文件；数据库表名、列名和 `SOURCE_DEFS` 的 id 应保持兼容。
 - 浏览器当前使用 `perkradar-personal-v1` 和 `perkradar-show-all-v1`，兼容读取旧的 `daily-deals-*` 键；不删除旧键，保留 `{ claimed, favorites }` JSON 形状。
 
-判据：旧部署使用的 `daily-free-info` 名称只出现在迁移说明中。Compose 名称变更的停机与备份步骤见 [OPERATIONS.md](OPERATIONS.md)，不能让新旧实例同时使用同一数据库；收藏键、快照格式和数据库标识按兼容约定处理，不能机械替换。
+判据：升级的停机与备份步骤见 [OPERATIONS.md](OPERATIONS.md)，不能让新旧实例同时使用同一数据库；保留收藏键、快照格式和数据库标识的兼容性。
 
 ## 3. 许可与第三方声明
 

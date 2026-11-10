@@ -2,37 +2,23 @@
 
 PerkRadar 是一个可自行部署的优惠线索聚合器。它定时读取固定的公开 RSS、Atom、JSON 和 Markdown 来源，把标题、原文链接和短摘要整理到一个轻量的 SQLite 数据库，再用网页看板帮助你搜索、筛选、收藏和标记已领。
 
-项目名称与 GitHub 仓库名统一为 **PerkRadar**，克隆后的目录名为 `PerkRadar`；npm 包名、Docker Compose 项目名和容器名使用小写 `perkradar`。
+条目来自公开订阅源，可能包含闲聊、求购、推广或失效活动。分类由标题规则推断，不构成优惠真实性、有效期或领取资格的核验；请以原文和活动官方说明为准。
 
-它的定位是“先把线索集中起来”，不是逐条认证的领取平台。页面里的一条记录只代表对应来源曾返回过这条内容，不代表活动仍然有效、领取条件已经核实、账户一定有额度，也不代表 PerkRadar 已经打开原文逐条确认。使用时请把原文页面作为最终依据。
+## 部署方式
 
-## 推荐安装方式：交给 Personal Agent 部署
+推荐让 Personal Agent 协助部署，也可按下方步骤自行运行。PerkRadar 适用于单机单实例部署，需要常驻 Node 进程和可写的本地 SQLite 数据目录。
 
-Personal Agent 可以协助部署和安排外部推送，但**不得把 PerkRadar 端口直接暴露到公网，也不得仅把 HOST 改为 0.0.0.0 就当作完成部署**。本项目本身不发送通知。
+- **本机使用**：默认绑定 `127.0.0.1:38471`，未启用认证时仅用于可信的单用户环境。
+- **公网使用**：通过 TLS 反向代理访问，并设置至少 32 字符的随机 `PERKRADAR_ACCESS_TOKEN`；应用端口继续仅对宿主机开放。
 
-云部署必须使用 TLS 反向代理，并设置至少 32 字符的随机 `PERKRADAR_ACCESS_TOKEN`。不要把真实令牌写进仓库、URL 或公开聊天。网页在 `/login` 输入令牌后获得 HttpOnly、SameSite=Strict、8 小时有效的签名会话；Agent 使用 `Authorization: Bearer <token>`。配置令牌后首页及所有数据/刷新 API 均要求认证；未配置时仅适用于可信的本机单用户环境。
-
-宿主机运行 Caddy 的最小模板（将域名替换为你控制的域名；公网仅开放 80/443，应用仍绑定 127.0.0.1）：
-
-```caddyfile
-perks.example.com {
-    reverse_proxy 127.0.0.1:38471
-}
-```
-
-域名解析和公网端口配置正确后，Caddy 负责申请证书和终止 TLS；PerkRadar 使用共享访问令牌和签名会话控制访问，没有独立的多用户账号系统。生产会话默认带 `Secure`，公网部署必须保持开启。仅在可信的本机 HTTP 调试环境中，可设置 `PERKRADAR_SECURE_COOKIE=0`；这不会影响 Bearer 认证。
-
-登录尝试按进程共享限额，每分钟最多 10 次；页面中的“退出”清除本浏览器的 cookie。会话过期或令牌更换后需要重新登录；要让全部旧会话失效，应更换 `PERKRADAR_ACCESS_TOKEN` 并重启应用。也可在代理前增加 SSO，但仍须保留应用访问控制。保持 `TRUST_PROXY_HEADERS` 关闭，除非代理明确覆盖转发头。完整环境变量与升级注意事项见 [运维文档](docs/OPERATIONS.md)。
+外部推送可由调用方另行集成，PerkRadar 本身不发送通知。
 
 ## 快速开始
 
 ### 环境要求
 
-- Node.js 22.13 或更高版本
-- npm
-- 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境（Compose v2.24 或更高版本）
-
-Node.js 22.13 是最低要求，因为项目使用了 Node 内置的 `node:sqlite`。依赖版本锁在 `package-lock.json` 中。
+- **Docker 方式**：Docker Engine 和 Docker Compose v2.24 或更高版本，也可使用 Docker Desktop；宿主机无需另装 Node.js。
+- **直接运行源码**：Node.js 22.13 或更高版本，以及 npm。项目使用 Node 内置的 `node:sqlite`，依赖解析锁定在 `package-lock.json` 中。
 
 ### 获取源码
 
@@ -41,46 +27,82 @@ git clone https://github.com/luobinger/PerkRadar.git
 cd PerkRadar
 ```
 
-上述命令获取仓库的默认分支；如果正在阅读其他分支上的 README，应切换到对应分支后再按本文操作。已有旧版本的部署者应先阅读[升级注意事项](#运行状态与升级)，备份数据库并停止旧实例，再启动新版。
+已有部署请先阅读[升级说明](#运行状态与升级)，备份数据库并停止旧实例，再启动新版。
 
 ### 用 Docker 运行
 
-这是推荐的本机运行方式。它会构建生产镜像、启动容器，并把 SQLite 数据保存在项目目录的 `./data` 中。根目录 `.env` 是可选配置文件，不提交到 Git，也不复制进镜像；含凭据时应限制为仅本人可读（权限 `600`）。
+此命令构建生产镜像并启动容器，SQLite 数据保存在宿主机的 `./data`。容器以非 root 的 `node` 用户（uid 1000）运行，宿主数据目录须允许该用户写入；权限设置见[运维文档](docs/OPERATIONS.md)。
 
-`PERKRADAR_ACCESS_TOKEN` 控制本应用的访问认证。`JINA_API_KEY` 只用于 LINUX DO 来源所依赖的 Jina 服务，两者用途不同。也可通过 `JINA_API_KEY_FILE` 读取 Jina key，文件路径必须在容器内可访问，并由运行环境单独挂载；仅把文件放在宿主的 `.secrets/` 下不会自动挂载。未配置 Jina key 时使用匿名请求，可能受上游免费额度和限流影响，页面会显示诊断信息。
+Compose 可读取项目根目录的 `.env`。该文件被 Git 和镜像构建忽略；包含凭据时应使用 `600` 权限。配置项见下方[访问控制与配置](#访问控制与配置)。
 
 ```bash
 docker compose -p perkradar up -d --build
 ```
 
-打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)，或先检查服务健康状态：
-
-```bash
-curl -sS http://127.0.0.1:38471/api/health
-```
-
-默认只绑定到本机回环地址 `127.0.0.1`，不会自动提供公网访问。宿主端口被占用时，只替换宿主端口，容器内端口仍保持 `38471`：
+打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。宿主端口被占用时，可只替换宿主端口，容器内端口仍为 `38471`：
 
 ```bash
 HOST_PORT=38481 docker compose -p perkradar up -d --build
 ```
 
-此时访问 [http://127.0.0.1:38481/](http://127.0.0.1:38481/)。完整的启停、日志、备份、恢复和回滚说明见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
+此时访问 [http://127.0.0.1:38481/](http://127.0.0.1:38481/)。
 
 ### 用 npm 开发
 
+在项目目录安装依赖：
+
 ```bash
 npm ci
-npm run dev
 ```
 
-开发服务器默认监听 `127.0.0.1:38471`（`HOST`/`PORT` 可显式覆盖；公网部署须按上方安全指引），打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。开发模式默认使用项目目录下的 `data/deals.db`，首次运行会从真实来源抓取，不会灌入示例优惠。
+以下示例使用独立端口和开发数据库，避免与默认部署共用：
 
-本地设计预览页 `/demo` 只在开发环境提供，用于查看界面布局和交互示例：
+```bash
+DATA_DIR="$HOME/.local/share/perkradar-dev" PORT=38481 npm run dev
+```
 
-[http://127.0.0.1:38471/demo](http://127.0.0.1:38471/demo)
+打开 [http://127.0.0.1:38481/](http://127.0.0.1:38481/)。调度器会抓取真实来源；端口如已占用，需换用空闲端口。未显式设置时，监听地址为 `127.0.0.1:38471`，数据库为 `./data/deals.db`。
 
-生产镜像不包含 `/demo` 路由。
+开发环境的 `/demo` 使用示例数据展示界面，不代表真实抓取结果；生产 Docker 镜像不包含此路由。
+
+## 访问控制与配置
+
+| 配置项 | 用途与默认行为 |
+| --- | --- |
+| `PERKRADAR_ACCESS_TOKEN` | 本应用的共享访问令牌。未设置或为空时关闭认证；非空但少于 32 字符时拒绝访问 |
+| `PERKRADAR_SECURE_COOKIE` | 生产会话默认启用 `Secure`；仅可信本机 HTTP 调试可设为 `0` |
+| `JINA_API_KEY` | LINUX DO 来源使用的 Jina 凭据，与应用访问令牌无关；不配置时匿名请求可能受额度和限流影响 |
+| `JINA_API_KEY_FILE` | 从文件读取 Jina 凭据；容器部署须单独挂载可读文件，仅放在宿主 `.secrets/` 下不会自动挂载 |
+| `DATA_DIR` | 直接运行时默认 `./data`；Compose 固定为容器内 `/data`，挂载宿主 `./data` |
+| `HOST` / `PORT` | 直接运行时默认 `127.0.0.1` / `38471`；Compose 使用 `HOST_PORT` 更改宿主端口 |
+
+其他配置项见[运维文档](docs/OPERATIONS.md)。
+
+### 登录与退出
+
+启用认证后，首页与数据 API 均要求有效凭据。浏览器在 `/login` 输入令牌，获得有效期 8 小时的签名会话，cookie 带 `HttpOnly`、`SameSite=Strict`，生产默认带 `Secure`。仅使用 HTTP 的本机生产环境也需显式设置 `PERKRADAR_SECURE_COOKIE=0` 才能使用网页登录；公网保持开启。脚本使用 Bearer 请求头，不受 cookie 设置影响。
+
+令牌从客户端的安全配置读取，例如在已设置环境变量的终端中检查健康状态：
+
+```bash
+curl -fsS -H "Authorization: Bearer $PERKRADAR_ACCESS_TOKEN" http://127.0.0.1:38471/api/health
+```
+
+不要将真实令牌写入 URL、源码或公开输出。
+
+PerkRadar 没有独立的多用户账号系统。“退出”清除本浏览器的会话 cookie；要使所有旧会话失效，需更换访问令牌并重启应用。登录尝试使用进程共享限额，每分钟最多 10 次。
+
+### TLS 反向代理
+
+宿主机上的 Caddy 可使用以下配置，其中域名须替换为实际域名，并正确配置 DNS 和证书申请所需的网络访问：
+
+```caddyfile
+perks.example.com {
+    reverse_proxy 127.0.0.1:38471
+}
+```
+
+仅向公网开放反向代理的端口，保留应用的回环绑定和 Secure cookie。`TRUST_PROXY_HEADERS` 默认关闭，仅在代理会覆盖客户端转发头时开启。部署边界见 [SECURITY.md](SECURITY.md)。
 
 ## 页面能做什么
 
@@ -117,15 +139,17 @@ npm run dev
 | 果核剥壳 | RSS / Atom | 收录允许域名内的 feed 条目 |
 | 异次元软件世界 | RSS / Atom | 请求会跟随重定向到最终地址 |
 
-综合 RSS / Atom 来源使用 7 天留存窗口，并限制条目链接必须位于该来源允许的域名内。来源失败会与其他来源隔离，不会因为某一个来源超时而清空其他来源的数据。每个来源的网络抓取与重试共用 25 秒超时窗口，单个 feed 最多解析 2000 条，响应按字符累计限制为 150 万字符；已声明的 Content-Length 超过同一数值也会提前拒绝。
+所有来源的条目（包括 Epic）都使用 7 天在架窗口：优先按来源提供的有效时间计算，缺失时按首次入库时间计算，但不把首次入库时间显示为原文发布时间。条目链接必须位于该来源允许的域名内。每个来源的网络抓取与重试共用 25 秒超时窗口，单个 RSS / Atom feed 最多解析 2000 条，响应大小受限。
 
-来源返回 `429` 或 `503` 时最多额外重试两次，等待时间从 500 毫秒起翻倍，并取上游 `Retry-After` 与该等待时间的较大值。单次等待超过 5 秒时，本轮不继续等待，推迟到后续轮次；采信的 `Retry-After` 最多为 6 小时。同一来源连续三次抓取失败后至少暂停 10 分钟，到期后的下一次抓取再尝试；这些退避状态保存在进程内，重启后重置。
+来源返回 `429` 或 `503` 时最多额外重试两次，结合指数退避和上游 `Retry-After` 等待；等待过长时推迟到后续轮次，`Retry-After` 最多采信 6 小时。同一来源连续三次网络抓取失败后至少暂停 10 分钟，到期后的下一次抓取再尝试；这些退避状态保存在进程内，重启后重置。
 
 链接会在入库前校验并规范化：只接受 `http` 和 `https`，拒绝过长链接、带 `user:pass@` 凭证的链接和跨来源域名链接。标题最多保存 300 个字符，摘要最多保存 160 个字符；来源没有提供简介时保持为空，不自行补写价格、日期或领取条件。
 
-Epic 条目的 `expiresAt` 来自当前免费促销的结束时间。其他来源没有真实活动截止时间，页面中的“近 7 天”是数据库留存规则，不是活动到期日。
+Epic 条目的 `expiresAt` 来自当前免费促销的结束时间，到期即不再展示；其他来源没有应用可确认的活动截止时间，`expiresAt` 留空。“近 7 天”表示在架规则，不是活动有效期。
 
-分类是可解释的信号评分，不是人工认证：明确限免、免费领取、降价、优惠券、折扣、返现、红包、注册送额度等信号加分，抽奖、求购、二手买卖帖、提问句和编辑性讨论扣分；`Pro` 单独不再表示会员，更新/公告/问号不会单独否决明确优惠。`classifySignals()` 返回类别、内容类型、分数及置信度。默认在读取时重算分类，不改写历史库；设置 `PERKRADAR_STORED_CATEGORIES=1` 可回退到已存分类。来源边界见 [docs/SOURCES.md](docs/SOURCES.md)。
+Epic 商品列表为空或结构异常时，本轮该来源记为失败，不按异常结果清空旧条目；旧条目仍受上述在架和到期规则约束。若响应结构正常但没有符合条件的当前免费促销，则同步撤下旧 Epic 条目。其他来源抓取失败也不按失败结果清空已有条目。
+
+分类依据标题信号评分：优惠、限免等明确表达加分，抽奖、求购、二手交易、提问和讨论表达扣分；仍可能误判。“其他”既可能包含非优惠内容，也可能包含未被规则识别的优惠。默认读取时重算分类，不改写已有条目；设置 `PERKRADAR_STORED_CATEGORIES=1` 可使用入库时的分类。来源边界见 [docs/SOURCES.md](docs/SOURCES.md)。
 
 ## 刷新和新鲜度
 
@@ -140,7 +164,9 @@ SQLite 调度租约有效期为 90 秒。租约被其他进程持有时，本进
 - 最近一轮超过 2.5 小时会标记为过时，超过 4 小时会标记为严重过时
 - 程序不会发送邮件、聊天消息或系统通知
 
-`/api/health` 的 `ok: true` 只表示进程能够读取 SQLite，不表示数据新鲜，更不表示每条线索都有效。判断数据状态时，应同时查看 `sourceHealth`、`failures`、`fetchedAt`、`freshness` 和 `anomalies`。
+`/api/health` 的 `ok: true` 只表示能读取数据库。`freshness` 按最近一轮的结束时间计算，即使该轮全部失败也会更新时间；尚无已结束轮次时，时间为空，过时标记为 `false`。因此应结合 `sourceHealth`、`failures` 和 `anomalies` 判断抓取状态，不能只看健康状态或更新时间。
+
+`activeCount` 是符合在架规则的全部线索数，包含“其他”；`newCount` 是其中在最近一轮首次入库的数量。它们都不是逐条核实可领取的优惠数量。
 
 ## API
 
@@ -162,11 +188,13 @@ curl -sS http://127.0.0.1:38471/api/health
 - `fetchedAt`：最近一轮结束时间
 - `freshness`：是否过时或严重过时
 - `anomalies`：全失败、来源返回 0 条、条数骤降、连续失败达到 3 轮、解析结构异常等提示
-- `sources[].quality`：每个来源近 8 条已结束轮次的连续失败数、条数骤降、解析结构异常和简短 warning；历史查询有上限，不新增数据库表
+- `sources[].quality`：每个来源近期轮次的连续失败数、条数骤降、解析结构异常和简短提醒
 
 ### `GET /api/deals`
 
-返回 `BoardState` 和 `pagination: {offset, limit, total, hasMore}`。支持 `?offset=0&limit=500`；`offset` 必须是非负整数，`limit` 必须为 1–2000 的整数，默认 500。无效分页参数返回 `400`，数据库不可读返回 `503`；全局统计不随分页缩水。网页按页读取完整列表（安全上限 10 万条）并每 30 秒在可见时读取数据库中的最新结果，重新聚焦立即检查；请求超时会取消。这种轮询不触发外部来源抓取，抓取由调度器或“立即刷新”触发。
+返回 `BoardState` 和 `pagination: {offset, limit, total, hasMore}`。`offset` 为非负整数，`limit` 为 1–2000 的整数（默认 500）；无效参数返回 `400`，数据库不可读返回 `503`。全局统计不随分页变化。
+
+页面按页读取列表（安全上限 10 万条），可见时每 30 秒读取数据库的最新结果，重新聚焦时立即检查；轮询不触发外部抓取，外部抓取由调度器或“立即刷新”触发。
 
 ```bash
 curl -sS http://127.0.0.1:38471/api/deals
@@ -193,7 +221,7 @@ curl -sS -X POST http://127.0.0.1:38471/api/refresh
 | `500` | 未分类的刷新错误 |
 | `503` | 访问认证配置无效，例如令牌短于 32 字符 |
 
-设置 `PERKRADAR_ACCESS_TOKEN` 后，本接口与其余数据 API 要求 Bearer 或会话认证；未配置或设为空字符串时没有身份认证，非空但不足 32 字符会拒绝访问。API 示例中的裸请求适用于未开启认证的本机环境；开启认证后，客户端需从安全配置读取令牌并放入 `Authorization: Bearer …` 请求头，或携带网页登录获得的会话 cookie。仍保留同源防护、冷却与限流，不能直接暴露端口，详见 [SECURITY.md](SECURITY.md)。
+上述 API 示例适用于未开启认证的本机环境。开启认证后，需携带有效 Bearer 令牌或会话 cookie；所有数据 API 在缺少有效凭据时返回 `401`，认证配置无效时返回 `503`。
 
 ### `/api/session`
 
@@ -248,29 +276,15 @@ git diff --check
 
 测试使用 `tests/fixtures/` 和合成样本，不访问外网，也不写入生产目录 `./data`。`npm run report` 会访问真实来源并写入 `DATA_DIR` 指向的数据库，只应在明确需要实时抓取时使用；不要把它指向正在使用的生产库。
 
-GitHub Actions 的常规 CI 在推送 `main`、提交 Pull Request 或手动触发时运行，使用 Node.js `22.13.0` 和 `24` 两个版本，检查离线测试、Lint、类型、生产构建和生产依赖审计。仅推送其他分支不会自动触发这套 CI。依赖审计使用 npm 官方 registry，避免镜像缺少审计端点导致误报。实时来源探测是单独的定时工作流，不作为 Pull Request 的必过检查，因为上游故障、反爬挑战或 feed 结构变化不应阻断无关代码的合并。
+GitHub Actions 在推送 `main`、创建或更新 Pull Request、手动触发时运行常规 CI，使用 Node.js `22.13.0` 和 `24` 检查测试、Lint、类型、构建及生产依赖安全公告。依赖审计使用 npm 官方 registry。实时来源探测使用独立的定时工作流，与离线 CI 分开执行；探测结果反映上游可用性。
 
-动到页面时，还需要在 1440、1280 和 390 像素宽度下检查真实页面，确认没有控制台错误、失败请求、横向溢出、文本裁切或关键控件重叠。完整开发约定见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+页面改动还需验证桌面与手机布局、交互和浏览器错误。详细验收要求见[开发文档](docs/DEVELOPMENT.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## 运维和安全
+## 运维与反馈
 
-常用 Docker 命令：
+SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` 和 `deals.db-shm`。运行中的数据库不能仅复制主文件备份；启停、日志、一致性备份、恢复与回滚步骤见[运维文档](docs/OPERATIONS.md)。
 
-```bash
-docker compose -p perkradar ps
-docker compose -p perkradar logs -f --tail=200
-docker compose -p perkradar restart
-docker compose -p perkradar stop
-docker compose -p perkradar start
-```
-
-SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` 和 `deals.db-shm`。不要删除 `./data`，也不要只复制 `deals.db` 文件来做正在运行中的数据库备份；一致性备份和恢复步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
-
-生产容器以非 root 的 `node` 用户运行，宿主的 `./data` 必须对容器内 uid 1000 可写。不要用 `chmod 777` 解决权限问题。
-
-日志统一使用 `[deals]` 前缀的单行 JSON，记录轮次、来源成功与失败、耗时和失败分类，不记录标题正文、Cookie、请求头或浏览器个人状态。结构化日志字段见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
-
-发现内容错误、失效条目或来源问题时，请附原文链接、发现时间和期望行为，通过仓库的 Issue 模板反馈。漏洞不要公开发布可复现细节，按 [SECURITY.md](SECURITY.md) 的私密报告流程提交。
+抓取日志使用 `[deals]` 前缀的单行 JSON，字段说明见[开发文档](docs/DEVELOPMENT.md)。内容错误、失效线索与来源问题可通过仓库的 Issue 模板反馈；安全问题按 [SECURITY.md](SECURITY.md) 报告。
 
 ## 文档索引
 
@@ -296,4 +310,4 @@ SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` �
 
 数据库使用 `PRAGMA user_version` 管理版本。首次从旧库升级到版本 1 时，在事务中增加索引和租约表，不重写已有优惠条目；程序拒绝打开版本高于 1 的数据库。每轮刷新提交时清理 30 天前已结束的抓取轮次及对应来源记录，始终保留最近一个已结束轮次；这项历史清理不删除 `deals`，条目另按来源留存与到期规则处理。
 
-**升级前先做一致性备份并保留旧镜像。** 旧部署使用的 Compose 项目名是 `daily-free-info`，当前使用 `perkradar`；改名会创建另一套容器与网络，不能在旧实例仍运行时直接启动新版并共用 `./data`。按[运维文档](docs/OPERATIONS.md)停旧实例、迁移、验收；需要回滚时使用升级前的备份和镜像。源码更新或推送 GitHub 不会自动更新已运行的容器。
+**升级前先做一致性备份并保留旧镜像。** 从使用 `daily-free-info` 的旧部署升级时，应按[运维文档](docs/OPERATIONS.md)先停止旧实例，再启动 `perkradar`；新旧实例不能同时使用同一 `./data`。需要回滚时使用升级前的备份和镜像。更新源码后仍需重新构建并启动容器，运行中的镜像不会随 GitHub 更新而自动替换。
