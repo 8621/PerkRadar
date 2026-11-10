@@ -70,11 +70,11 @@ curl -sS http://127.0.0.1:38481/api/health
 在项目目录、且本机有 Node 22 时，可以写到 `./data` 以外的归档目录，避免和活库缠在一起：
 
 ```bash
-mkdir -p "$HOME/free-info-archives"
+mkdir -p "$HOME/perkradar-archives"
 node --experimental-strip-types << 'EOF'
 import { DatabaseSync, backup } from "node:sqlite";
 const db = new DatabaseSync("./data/deals.db");
-await backup(db, process.env.HOME + "/free-info-archives/deals-online.db");
+await backup(db, process.env.HOME + "/perkradar-archives/deals-online.db");
 db.close();
 EOF
 ```
@@ -87,7 +87,7 @@ EOF
 
 ```bash
 docker compose -p daily-free-info stop
-dest="$HOME/free-info-archives/stopped-$(date +%Y%m%d-%H%M%S)"
+dest="$HOME/perkradar-archives/stopped-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$dest"
 cp -p ./data/deals.db "$dest/"
 if [ -f ./data/deals.db-wal ]; then cp -p ./data/deals.db-wal "$dest/"; fi
@@ -127,7 +127,7 @@ curl -sS http://127.0.0.1:38471/api/health
 docker image tag daily-free-info:local daily-free-info:before-rollback
 ```
 
-源码和部署包打成 tar，放在仓库外面，例如 `$HOME/free-info-archives/`。不要在项目目录里再展开一份旧源码。`tsconfig.json` 的 `include` 含有 `**/*.ts`，`tsconfig.json` 与 `eslint.config.mjs` 现在排除 `deployment-backups/`；但项目树其它位置若留下旧的 `next.config.ts` 或其他 `.ts`，TypeScript 仍会扫到它们。`deployment-backups` 保持为 tar，不要展开后留在项目树里。
+源码和部署包打成 tar，放在仓库外面，例如 `$HOME/perkradar-archives/`。不要在项目目录里再展开一份旧源码。`tsconfig.json` 的 `include` 含有 `**/*.ts`，`tsconfig.json` 与 `eslint.config.mjs` 现在排除 `deployment-backups/`；但项目树其它位置若留下旧的 `next.config.ts` 或其他 `.ts`，TypeScript 仍会扫到它们。`deployment-backups` 保持为 tar，不要展开后留在项目树里。
 
 回滚源码时只替换有记录的应用文件，不要用旧包覆盖 `./data`、`.env`，或用户后来自己加的文件。换回旧镜像后执行：
 

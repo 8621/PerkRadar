@@ -198,8 +198,8 @@ docker compose -p daily-free-info logs --no-color --tail=400 2>&1 | grep '"event
 `docker compose logs` 只读当前容器。`up -d --build` 重建容器后，旧容器的日志不再可见；容器重启也会重新排程，日志里会出现一轮新的 `trigger: "schedule"`，轮次 id 接着库里已有的 id 递增，不从 1 开始。需要留档就先导出到仓库外：
 
 ```bash
-mkdir -p "$HOME/free-info-archives"
-docker compose -p daily-free-info logs --no-color > "$HOME/free-info-archives/deals-$(date +%Y%m%d-%H%M%S).log"
+mkdir -p "$HOME/perkradar-archives"
+docker compose -p daily-free-info logs --no-color > "$HOME/perkradar-archives/deals-$(date +%Y%m%d-%H%M%S).log"
 ```
 
 仓库忽略 `reports/` 与 `*.log`，不要把日志提交进版本库；日志说明写在文档里。
@@ -208,7 +208,7 @@ docker compose -p daily-free-info logs --no-color > "$HOME/free-info-archives/de
 
 1. 先看 `/api/health` 和页面，记下改之前的来源数和最后更新时间。
 2. 改代码。解析和分类的预期放进 `tests/`，夹具可以是合成的，但必须留在测试里。
-3. 依次跑 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build`。动到页面就在 1440、1280 和 390 宽度下看真实数据，不要只看编译；验收顺序见 [.mrdayone/verify.md](../.mrdayone/verify.md)，结果见 [界面重构测试报告](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）与 [reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log)。
+3. 依次跑 `npm test` → `npm run lint` → `npx --no-install tsc --noEmit` → `npm run build`。动到页面就在 1440、1280 和 390 宽度下看真实数据，不要只看编译；验收顺序见 [CONTRIBUTING.md](../CONTRIBUTING.md)「改动流程」；单次验收记录属本地产物，不随公开仓库发布。
 4. 生产依赖有变动时再跑 `npm audit --omit=dev --registry=https://registry.npmjs.org` 和完整的 `npm audit --registry=https://registry.npmjs.org`。本机默认 npm 镜像不支持审计端点。
 5. 需要更新容器时用 [OPERATIONS.md](OPERATIONS.md) 里只针对 `daily-free-info` 的命令。不要把 `./data` 放进镜像，也不要用测试库覆盖它。
 
@@ -216,7 +216,7 @@ docker compose -p daily-free-info logs --no-color > "$HOME/free-info-archives/de
 
 ## 视觉验收
 
-这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。验收顺序、真实数据与异常路径见 [.mrdayone/verify.md](../.mrdayone/verify.md)，重构验收记录见 [界面重构测试报告](PERKRADAR_UI_REFACTOR_TEST_REPORT.doc.md)（配套 .docx 由 IDE 生成）、[reports/ui-refactor-2026-11-09.log](../reports/ui-refactor-2026-11-09.log)、[reports/browser-adversarial-2026-11-09.log](../reports/browser-adversarial-2026-11-09.log) 与 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)。
+这是改界面之后要人眼看的标准，不是现成的自动测试。改布局之后必须重新看，不能用一次历史验收代替。验收顺序、真实数据与异常路径见 [CONTRIBUTING.md](../CONTRIBUTING.md)「改动流程」与本节清单；单次验收记录属本地产物，不随公开仓库发布。
 
 正式首页按 `/demo` 的布局：顶部只有品牌与「立即刷新」；搜索、排序、来源、分类、收藏、运行状态与逐源结果在左侧状态区和提示区；「信息列表」标题行右侧是「查看全部线索」与「只看新增」两个开关，并显示可见条数与「已隐藏 N 条「其他」线索」；卡片只保留标题、收藏文字按钮、摘要框、原文信息、标签、「打开原文」与「标记已领」。`/demo` 是本地 dev 预览的设计预览页（7 条示例，其中 1 条「其他」默认隐藏，「只看新增」仍为 3 条，开关只在当前页面内存生效、刷新重置），只在源码与 dev 预览可用；生产镜像的构建结果只有 `/`、`/_not-found` 和三个 API，不含 `/demo`。正式页与它共用 `src/components/deal-board.css`。
 
@@ -228,4 +228,4 @@ docker compose -p daily-free-info logs --no-color > "$HOME/free-info-archives/de
 - 默认隐藏「其他」逐项看：「全部」视图首屏可见条数与「已隐藏 N 条「其他」线索」提示；点「查看全部线索」后显示所有条目；与「只看新增」组合；显式点「其他」分类或「我的收藏」时不隐藏；搜索仍受默认隐藏影响、结果为空会提示打开开关；重置回到默认隐藏；刷新后开关保留。这只是展示过滤，收录规则、分类规则与数据库都不变。本地 `/demo` 的 7 条示例默认隐藏 1 条「其他」，开关刷新即重置。
 - 异常路径用浏览器 `route` 改写 `/api/refresh`：恶意标题 / 链接、空库、畸形结构、429、断网；逐项确认页面保留旧内容或显示明确提示，不出现空白和假条目。客户端 `src/lib/board-view.ts` 拒绝 `javascript:` / `data:` / 带凭据 / 超长 URL，截断异常文本，关键结构坏时拒绝整份数据，计数从校验后 `deals` 推导。
 - 空库、筛选为空、轮询接口失败、本地状态写入失败各有区分提示，不能用假条目填上，也不能让几种状态看起来一样。
-- 命令与浏览器验收记录：`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷，390px 无横向溢出。测试项数以 `npm test` 输出为准，验收日志见本节开头。
+- 命令与浏览器验收记录：`npm test`、`npm run lint`、`npx --no-install tsc --noEmit`、`git diff --check` 通过，1280 桌面 / 390 手机预览无控制台报错、无失败请求、无关键视觉缺陷，390px 无横向溢出。测试项数以 `npm test` 输出为准。

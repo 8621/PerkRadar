@@ -108,7 +108,7 @@ NodeSeek、小众软件、果核剥壳、异次元是综合 RSS/Atom。落在 7 
 
 **正式页「全部」视图默认隐藏分类为「其他」的条目**：结果标题行显示可见条数与「已隐藏 N 条「其他」线索」，并提供「查看全部线索」开关；显式选「其他」分类或「我的收藏」时不隐藏，搜索仍受默认隐藏影响（结果为空会提示打开开关），重置回默认隐藏。「查看全部线索」的展示偏好用独立 `localStorage` 键 `daily-deals-show-all-v1` 记住、监听 `storage` 事件跨标签同步、刷新后保留；本地 dev 预览 `/demo` 的 7 条示例默认隐藏 1 条「其他」，开关只在当前页面内存生效、刷新重置。**这只是展示过滤，不改收录规则、分类规则或数据库**：`src/lib/filter-deals.ts` 的新增可选参数 `includeOther` 省略时沿用原有筛选行为。
 
-是否在入库时收紧关键词、从源头少收这类闲聊帖，是**尚未实施的后续选项**：它会改变 7 天窗口下的收录语义与在架条数，需同步改 `src/lib/classify.ts`、对应测试与 [SOURCES.md](SOURCES.md) 的收录说明；当前收录规则保持不变。默认隐藏的行为与这条后续选项同时记录在 [README.md](../README.md) 与 [OPEN_SOURCE_CHECKLIST.md](OPEN_SOURCE_CHECKLIST.md)，验收日志见 [reports/default-hide-other-2026-11-09.log](../reports/default-hide-other-2026-11-09.log)。每轮人工验收时，对分到「免费白嫖」「限免」「其他」但标题像闲聊或抽奖的条目要打开原文核对，见下文清单。
+是否在入库时收紧关键词、从源头少收这类闲聊帖，是**尚未实施的后续选项**：它会改变 7 天窗口下的收录语义与在架条数，需同步改 `src/lib/classify.ts`、对应测试与 [SOURCES.md](SOURCES.md) 的收录说明；当前收录规则保持不变。默认隐藏的行为与这条后续选项同时记录在 [README.md](../README.md) 与 [OPEN_SOURCE_CHECKLIST.md](OPEN_SOURCE_CHECKLIST.md)。每轮人工验收时，对分到「免费白嫖」「限免」「其他」但标题像闲聊或抽奖的条目要打开原文核对，见下文清单。
 
 ## 每轮验收清单
 
