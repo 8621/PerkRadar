@@ -6,26 +6,36 @@ PerkRadar 是一个可自行部署的优惠线索聚合器。它定时读取固�
 
 ## 推荐安装方式：交给 Personal Agent 部署
 
-本项目最推荐的安装方式是：将仓库链接交给 muse、grokbot、hark 等 Personal Agent（个人智能体），让它协助在你自己的云空间完成部署，并配置每小时或每两小时推送一次新增优惠资讯。这样无需反复打开网页，也能及时掌握最新优惠线索。
+Personal Agent 可以协助部署和安排外部推送，但**不得把 PerkRadar 端口直接暴露到公网，也不得仅把 HOST 改为 0.0.0.0 就当作完成部署**。本项目本身不发送通知。
 
-部署、定时任务与消息推送需由所选 Personal Agent 根据其能力配置。PerkRadar 默认每 2 小时抓取一次，本身不发送通知；推送内容以最近一次成功抓取的结果为准。
+云部署必须使用 TLS 反向代理，并设置至少 32 字符的随机 `PERKRADAR_ACCESS_TOKEN`。不要把真实令牌写进仓库、URL 或公开聊天。网页在 `/login` 输入令牌后获得 HttpOnly、SameSite=Strict、8 小时有效的签名会话；Agent 使用 `Authorization: Bearer <token>`。配置令牌后首页及所有数据/刷新 API 均要求认证；未配置时仅适用于可信的本机单用户环境。
+
+宿主机运行 Caddy 的最小模板（将域名替换为你控制的域名；公网仅开放 80/443，应用仍绑定 127.0.0.1）：
+
+```caddyfile
+perks.example.com {
+    reverse_proxy 127.0.0.1:38471
+}
+```
+
+Caddy 自动处理 TLS；身份认证由 PerkRadar 令牌/会话负责。也可在代理前增加 SSO，不可省掉刷新访问控制。保持 `TRUST_PROXY_HEADERS` 关闭，除非代理明确覆盖转发头。完整环境变量与升级注意事项见 [运维文档](docs/OPERATIONS.md)。
 
 ## 快速开始
 
 ### 环境要求
 
-- Node.js 22 或更高版本
+- Node.js 22.13 或更高版本
 - npm
 - 如果使用 Docker，需要 Docker Desktop 或兼容 Docker Compose 的环境（Compose v2.24 或更高版本）
 
-Node.js 22 是必需条件，因为项目使用了 Node 内置的 `node:sqlite`。依赖版本锁在 `package-lock.json` 中。
+Node.js 22.13 是最低要求，因为项目使用了 Node 内置的 `node:sqlite`。依赖版本锁在 `package-lock.json` 中。
 
 ### 用 Docker 运行
 
 这是推荐的本机运行方式。它会构建生产镜像、启动容器，并把 SQLite 数据保存在项目目录的 `./data` 中。根目录 `.env` 是可选的；未配置 Jina API Key 时无需创建。需要鉴权时可通过 `JINA_API_KEY` 配置，也可设置 `JINA_API_KEY_FILE` 指向容器内可读取的密钥文件。`.secrets/` 不会复制进镜像，文件方式需要由运行环境单独挂载到容器。
 
 ```bash
-docker compose -p daily-free-info up -d --build
+docker compose -p perkradar up -d --build
 ```
 
 打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)，或先检查服务健康状态：
@@ -37,7 +47,7 @@ curl -sS http://127.0.0.1:38471/api/health
 默认只绑定到本机回环地址 `127.0.0.1`，不会自动提供公网访问。宿主端口被占用时，只替换宿主端口，容器内端口仍保持 `38471`：
 
 ```bash
-HOST_PORT=38481 docker compose -p daily-free-info up -d --build
+HOST_PORT=38481 docker compose -p perkradar up -d --build
 ```
 
 此时访问 [http://127.0.0.1:38481/](http://127.0.0.1:38481/)。完整的启停、日志、备份、恢复和回滚说明见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
@@ -49,7 +59,7 @@ npm ci
 npm run dev
 ```
 
-开发服务器监听 `0.0.0.0:38471`，打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。开发模式默认使用项目目录下的 `data/deals.db`，首次运行会从真实来源抓取，不会灌入示例优惠。
+开发服务器默认监听 `127.0.0.1:38471`（`HOST`/`PORT` 可显式覆盖；公网部署须按上方安全指引），打开 [http://127.0.0.1:38471/](http://127.0.0.1:38471/)。开发模式默认使用项目目录下的 `data/deals.db`，首次运行会从真实来源抓取，不会灌入示例优惠。
 
 本地设计预览页 `/demo` 只在开发环境提供，用于查看界面布局和交互示例：
 
@@ -67,12 +77,14 @@ npm run dev
 - 手动触发刷新，并查看刷新冷却、来源成功数和异常提示
 - 查看当前在架条目、最近一轮状态、逐来源结果和数据新鲜度
 
-首页的“全部”视图默认隐藏分类为“其他”的线索，因为综合订阅源可能包含闲聊、求购、抽奖、推广和新闻。点击“查看全部线索”可以显示它们；显式选择“其他”或“我的收藏”时不会隐藏。这个行为只影响页面展示，不会删除数据库记录，也不会改变抓取源和分类规则。
+首页默认显示全部分类。可取消“查看全部线索”来隐藏“其他”；搜索、显式选择“其他”或“我的收藏”时不隐藏。重置恢复显示全部；迁移用户保留已保存的展示偏好。每次渲染 100 条，可继续加载，提示当前范围。
 
 收藏与已领状态只保存在当前浏览器的 `localStorage`：
 
-- `daily-deals-personal-v1`：`{ "claimed": string[], "favorites": string[] }`
-- `daily-deals-show-all-v1`：是否显示“其他”线索
+- `perkradar-personal-v1`：`{ "claimed": string[], "favorites": string[] }`
+- `perkradar-show-all-v1`：是否显示“其他”线索
+
+首次读取时兼容旧 `daily-deals-*` 键并写入新键，保留旧键作为迁移回退；写入失败仍保留本页内存状态并明确提示未持久化。
 
 这些状态不会上传到服务端，也不会写入 SQLite。清除浏览器站点数据会清除它们。
 
@@ -96,26 +108,15 @@ npm run dev
 
 Epic 条目的 `expiresAt` 来自当前免费促销的结束时间。其他来源没有真实活动截止时间，页面中的“近 7 天”是数据库留存规则，不是活动到期日。
 
-分类是标题关键词分类，不是人工审核：
-
-- Epic 来源：游戏
-- 非 Epic 的抽奖、开奖、抽取、求购、求助、闲聊、讨论、新闻、公告、更新、评测、避雷、吐槽、预测、明显问句和明确收/求对象请求：其他
-- Epic、游戏、喜加一、Steam：游戏
-- 会员、订阅、Pro：会员订阅
-- 限免、免费领取：限免
-- 白嫖、免费、永免：免费白嫖
-- 折扣、优惠码、大促、降价、打折、爆降：低价优惠
-- 其他情况：其他
-
-低相关内容只改变展示分类，不删除来源记录；打开“查看全部线索”仍可查看。收/求规则只匹配明确对象，不以单字“收”或“求”拦截，因此“收款工具限免”仍会保留。分类结果不能当成领取资格或优惠真实性证明。来源边界、时间规则和每轮验收清单见 [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md)，来源使用条件见 [docs/SOURCES.md](docs/SOURCES.md)。
+分类是可解释的信号评分，不是人工认证：明确限免、免费领取、降价等信号加分，抽奖、求购和编辑性讨论扣分；`Pro` 单独不再表示会员，更新/公告/问号不会单独否决明确优惠。`classifySignals()` 返回类别、内容类型、分数及置信度。默认在读取时重算分类，不改写历史库；设置 `PERKRADAR_STORED_CATEGORIES=1` 可回退到已存分类。来源边界见 [docs/SOURCES.md](docs/SOURCES.md)。
 
 ## 刷新和新鲜度
 
-服务启动约 4 秒后执行一轮抓取，之后每 2 小时执行一轮。调度器在 Node 进程内运行，不依赖浏览器计时器或系统 cron。
+调度器仍在单个 Node 进程内运行，但使用 SQLite 租约和心跳拒绝重复实例。首次或上次轮次已超期时约 4 秒后补抓一次当前数据；未超期则等待剩余间隔，再每 2 小时抓取。不会补跑每个停机轮次，也不能恢复上游已经滚出的内容。
 
 - 停止进程、关闭 Docker 或让电脑休眠时，抓取会停止
 - 恢复运行后不会补抓停机期间错过的每一轮，只会继续执行下一轮
-- 手动刷新和定时刷新共用进程内锁，同一时间只允许一轮运行
+- 手动刷新和定时刷新共用进程内锁及 SQLite 轮次租约，失效持有者不能提交结果
 - 手动刷新有 60 秒冷却，并限制同一 IP 在 10 分钟内最多触发 8 次
 - 最近一轮超过 2.5 小时会标记为过时，超过 4 小时会标记为严重过时
 - 程序不会发送邮件、聊天消息或系统通知
@@ -124,7 +125,7 @@ Epic 条目的 `expiresAt` 来自当前免费促销的结束时间。其他来�
 
 ## API
 
-三个接口都使用 `cache-control: no-store`。
+数据和认证接口均使用 `cache-control: no-store`。
 
 ### `GET /api/health`
 
@@ -146,7 +147,7 @@ curl -sS http://127.0.0.1:38471/api/health
 
 ### `GET /api/deals`
 
-返回网页看板所需的完整 `BoardState`，包括当前条目、来源状态、刷新状态、最近一轮结果、新鲜度和来源质量告警。
+返回 `BoardState` 和 `pagination: {offset, limit, total, hasMore}`。支持 `?offset=0&limit=500`，默认 500、最大 2000；全局统计不随分页缩水。网页按页读取完整列表并每 30 秒在可见时更新，重新聚焦立即检查；请求超时会取消。
 
 ```bash
 curl -sS http://127.0.0.1:38471/api/deals
@@ -171,7 +172,7 @@ curl -sS -X POST http://127.0.0.1:38471/api/refresh
 | `429` | 仍在冷却期或触发频率限制 |
 | `500` | 未分类的刷新错误 |
 
-这个接口没有登录、token 或 API key 认证。当前同源检查和限流只适合本机使用，不能直接把端口暴露到公网。公网部署前必须补充反向代理、TLS、身份认证、刷新接口访问控制和全局速率限制，相关边界见 [SECURITY.md](SECURITY.md)。
+设置 `PERKRADAR_ACCESS_TOKEN` 后，本接口与其余数据 API 要求 Bearer 或会话认证；未配置时没有身份认证。仍保留同源防护、冷却与限流，不能直接暴露端口，详见 [SECURITY.md](SECURITY.md)。
 
 ## 项目结构
 
@@ -226,11 +227,11 @@ GitHub Actions 的常规 CI 会运行离线测试、Lint、生产构建和生产
 常用 Docker 命令：
 
 ```bash
-docker compose -p daily-free-info ps
-docker compose -p daily-free-info logs -f --tail=200
-docker compose -p daily-free-info restart
-docker compose -p daily-free-info stop
-docker compose -p daily-free-info start
+docker compose -p perkradar ps
+docker compose -p perkradar logs -f --tail=200
+docker compose -p perkradar restart
+docker compose -p perkradar stop
+docker compose -p perkradar start
 ```
 
 SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` 和 `deals.db-shm`。不要删除 `./data`，也不要只复制 `deals.db` 文件来做正在运行中的数据库备份；一致性备份和恢复步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
@@ -260,3 +261,7 @@ SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` �
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=luobinger/PerkRadar&type=Date)](https://star-history.com/#luobinger/PerkRadar&Date)
+
+## 运行状态与升级
+
+源请求支持 429/503 的最多两次退避重试；尊重 Retry-After，等待过长则推迟到后续轮次，连续失败触发短时熔断。不绕过挑战、不自动更换来源。LINUX DO 状态区分缺 key、限流、结构异常。数据库首次升级通过事务设置 user_version=1，仅增加索引与租约表；30 天前历史轮次按规则清理，保留最新完成轮次，不改变 deals。**升级前备份；现有部署迁移 Compose 名称需先读运维文档，不能启动两份实例。**

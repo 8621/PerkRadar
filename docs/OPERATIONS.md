@@ -1,22 +1,22 @@
 # 运维
 
-命令都在项目目录执行，并且只带 `-p daily-free-info`。不要对其他目录 `docker compose down`，不要 `docker system prune`，不要 `docker compose down` 不带项目名。默认只把端口发布到 `127.0.0.1`，不是公网。
+命令都在项目目录执行，并且只带 `-p perkradar`。不要对其他目录 `docker compose down`，不要 `docker system prune`，不要 `docker compose down` 不带项目名。默认只把端口发布到 `127.0.0.1`，不是公网。
 
 机器休眠、关机、Docker Desktop 没启动，或这个容器被 stop，抓取都会停。`restart: unless-stopped` 只在 Docker 自己还在运行、且容器不是被手动 stop 时拉起它。
 
 ## 日常命令
 
 ```bash
-docker compose -p daily-free-info config
-docker compose -p daily-free-info up -d --build
-docker compose -p daily-free-info ps
-docker compose -p daily-free-info logs -f --tail=200
-docker compose -p daily-free-info restart
-docker compose -p daily-free-info stop
-docker compose -p daily-free-info start
+docker compose -p perkradar config --quiet
+docker compose -p perkradar up -d --build
+docker compose -p perkradar ps
+docker compose -p perkradar logs -f --tail=200
+docker compose -p perkradar restart
+docker compose -p perkradar stop
+docker compose -p perkradar start
 ```
 
-`config` 用来检查这次会使用的项目名、端口和卷，不会启动容器。`up -d --build` 构建镜像并启动。容器名是 `daily-free-info`，镜像名是 `daily-free-info:local`。宿主目录 `./data` 挂到容器内 `/data`。SQLite 文件是 `./data/deals.db`，WAL 模式下旁边还可能有 `deals.db-wal` 和 `deals.db-shm`。
+`config` 用来检查这次会使用的项目名、端口和卷，不会启动容器。`up -d --build` 构建镜像并启动。容器名是 `perkradar`，镜像名是 `perkradar:local`。宿主目录 `./data` 挂到容器内 `/data`。SQLite 文件是 `./data/deals.db`，WAL 模式下旁边还可能有 `deals.db-wal` 和 `deals.db-shm`。
 
 容器以镜像内置的 `node` 用户（uid 1000）运行，不是 root。`./data` 是宿主 bind mount，该 uid 必须能创建并写入上述三个文件。换到 uid 映射不同的宿主时，先确认 `./data` 对 uid 1000 可写，否则健康检查会返回 503「数据库不可读」。不要用 `chmod 777` 绕过权限。
 
@@ -33,7 +33,7 @@ curl -sS -X POST http://127.0.0.1:38471/api/refresh
 若 38471 已被别的程序占用，只改宿主端口，不要改容器内端口，也不要去停别的项目：
 
 ```bash
-HOST_PORT=38481 docker compose -p daily-free-info up -d --build
+HOST_PORT=38481 docker compose -p perkradar up -d --build
 curl -sS http://127.0.0.1:38481/api/health
 ```
 
@@ -45,9 +45,9 @@ curl -sS http://127.0.0.1:38481/api/health
 
 | 现象 | 先看什么 |
 | --- | --- |
-| 浏览器打不开 | `docker compose -p daily-free-info ps`。Docker 是否启动。端口是否用了 `HOST_PORT`。只应访问 `127.0.0.1` |
+| 浏览器打不开 | `docker compose -p perkradar ps`。Docker 是否启动。端口是否用了 `HOST_PORT`。只应访问 `127.0.0.1` |
 | 健康 503，`数据库不可读` | `./data` 是否存在、当前用户能否写。不要删库；先按下面备份，再看权限。读库失败会记 `health_check_failed` / `deals_read_failed` 日志；`GET /api/deals` 同样会返回 503 `数据库不可读` |
-| 来源失败或超时 | `/api/health` 的 `failures`，以及 `docker compose -p daily-free-info logs` 里 `[deals]` 的 `source_round.reason` 与 `error`。25 秒超时记为「超时」（`timeout`）；HTTP 错误状态（`http_status`）、响应过大（`response_too_large`）、格式 / 解析错误（`malformed_response`）各有分类。LINUX DO 格式不对会写明可能被阻断。不要改去直连 |
+| 来源失败或超时 | `/api/health` 的 `failures`，以及 `docker compose -p perkradar logs` 里 `[deals]` 的 `source_round.reason` 与 `error`。25 秒超时记为「超时」（`timeout`）；HTTP 错误状态（`http_status`）、响应过大（`response_too_large`）、格式 / 解析错误（`malformed_response`）各有分类。LINUX DO 格式不对会写明可能被阻断。不要改去直连 |
 | 想按轮次看完整日志 | 用 [DEVELOPMENT.md](DEVELOPMENT.md)「结构化日志」里按 `roundId` 过滤的命令；`at` 是 UTC，页面时间是北京时间。`up -d --build` 重建容器后旧日志不可见，留档要先导出 |
 | 某源 0 条但 `lastOk` 为真 | 这次 feed 解析结果是空的，旧行是否还在由 7 天和到期规则决定 |
 | 页面时间看起来差 8 小时 | 页面标签按 `Asia/Shanghai` 格式化。容器未设置 `TZ`，库内是 Unix 毫秒。先对照 `fetchedAt` 和 `fetchedAtBeijing`，不要只看容器 `date` |
@@ -67,7 +67,7 @@ curl -sS http://127.0.0.1:38481/api/health
 
 `node:sqlite` 的 `backup()` 可对打开着的 WAL 库生成一致副本：函数返回 Promise，完成后目标文件可以只读打开并读到已写入的行。若对正在服务的库返回 `database is locked`，改用下一节的停机复制。
 
-在项目目录、且本机有 Node 22 时，可以写到 `./data` 以外的归档目录，避免和活库缠在一起：
+在项目目录、且本机 Node 提供 node:sqlite backup() 时，可以写到 `./data` 以外的归档目录，避免和活库缠在一起：
 
 ```bash
 mkdir -p "$HOME/perkradar-archives"
@@ -86,14 +86,14 @@ EOF
 只停止本项目，等容器退出，再复制当时存在的文件：
 
 ```bash
-docker compose -p daily-free-info stop
+docker compose -p perkradar stop
 dest="$HOME/perkradar-archives/stopped-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$dest"
 cp -p ./data/deals.db "$dest/"
 if [ -f ./data/deals.db-wal ]; then cp -p ./data/deals.db-wal "$dest/"; fi
 if [ -f ./data/deals.db-shm ]; then cp -p ./data/deals.db-shm "$dest/"; fi
 ls -l "$dest"
-docker compose -p daily-free-info start
+docker compose -p perkradar start
 ```
 
 停机后这次复制到 `$dest` 的文件是一套。恢复时使用这一套，不要和更早的备份混放。复制前先 `ls "$dest"`，确认没有盖住另一份备份。
@@ -103,7 +103,7 @@ docker compose -p daily-free-info start
 先按上一节再做一份当前库的备份。然后只停止本项目，把现有文件改名留在旁边，而不是删除：
 
 ```bash
-docker compose -p daily-free-info stop
+docker compose -p perkradar stop
 mkdir -p ./data/aside-$(date +%Y%m%d-%H%M)
 mv ./data/deals.db ./data/deals.db-wal ./data/deals.db-shm ./data/aside-$(date +%Y%m%d-%H%M)/ 2>/dev/null || true
 ```
@@ -113,7 +113,7 @@ mv ./data/deals.db ./data/deals.db-wal ./data/deals.db-shm ./data/aside-$(date +
 若恢复的是停机时复制的三个文件，就把当时存在的那几个文件按原名放回 `./data/`。
 
 ```bash
-docker compose -p daily-free-info start
+docker compose -p perkradar start
 curl -sS http://127.0.0.1:38471/api/health
 ```
 
@@ -124,7 +124,7 @@ curl -sS http://127.0.0.1:38471/api/health
 回滚前保留两样东西：当前还能用的镜像，以及当前源码的 tar。镜像可以用本项目的标签另存，例如：
 
 ```bash
-docker image tag daily-free-info:local daily-free-info:before-rollback
+docker image tag perkradar:local perkradar:before-rollback
 ```
 
 源码和部署包打成 tar，放在仓库外面，例如 `$HOME/perkradar-archives/`。不要在项目目录里再展开一份旧源码。`tsconfig.json` 的 `include` 含有 `**/*.ts`，`tsconfig.json` 与 `eslint.config.mjs` 现在排除 `deployment-backups/`；但项目树其它位置若留下旧的 `next.config.ts` 或其他 `.ts`，TypeScript 仍会扫到它们。`deployment-backups` 保持为 tar，不要展开后留在项目树里。
@@ -132,7 +132,38 @@ docker image tag daily-free-info:local daily-free-info:before-rollback
 回滚源码时只替换有记录的应用文件，不要用旧包覆盖 `./data`、`.env`，或用户后来自己加的文件。换回旧镜像后执行：
 
 ```bash
-docker compose -p daily-free-info up -d --build
+docker compose -p perkradar up -d --build
 ```
 
-只有在明确要使用 `before-rollback` 这个标签、且 Compose 文件也改回对应构建时，才需要另作镜像标签处理。当前 Compose 固定构建 `daily-free-info:local`，所以上面的 `up -d --build` 会按当时目录里的源码重新构建。
+只有在明确要使用 `before-rollback` 这个标签、且 Compose 文件也改回对应构建时，才需要另作镜像标签处理。当前 Compose 固定构建 `perkradar:local`，所以上面的 `up -d --build` 会按当时目录里的源码重新构建。
+
+
+## 0.2.0 审核修复升级（需要维护者手动确认）
+
+本次改名后的 Compose project/container/image 为 perkradar；原来是 daily-free-info。**不要在旧容器仍运行时直接执行新的 up**，它们会共享 ./data 并冲突。先确认一致性备份，记录旧镜像与数据位置；在计划停机窗口停止旧项目，确认旧进程退出后再用新项目名构建/启动。不要 down -v，不删除 ./data，不混用两套 WAL。需要回滚先停止新实例并恢复升级前一致库与旧源码/镜像。这次代码修改不会自动停止、重建或迁移正在运行的容器。
+
+首次新程序启动会执行 schema v1 的事务迁移，增加租约表、source_runs(source_id,round_id,id) 和 rounds.finished_at 索引，不改优惠正文/URL。旧历史轮次在刷新事务中按 30 天清理，始终保留最近完成轮次。不要将旧程序直接指向升级后的库。
+
+环境变量：
+- HOST/PORT：npm 默认 127.0.0.1/38471；容器 HOST=0.0.0.0，但宿主发布仍回环。
+- PERKRADAR_ACCESS_TOKEN：可选，至少 32 字符随机值。云部署必须启用；所有数据 API 接受 Bearer，网页登录生成会话。
+- PERKRADAR_SECURE_COOKIE：生产默认 1。仅本机纯 HTTP 测试可设 0；公网必须 1，前置 TLS 反向代理。
+- PERKRADAR_STORED_CATEGORIES=1：回退到已存分类；默认按新规则读取时重算，不需要改历史数据。
+- DEALS_SNAPSHOT_DIR：显式路径才生成快照，不再自动探测任何平台目录。
+- PERKRADAR_OFFLINE=1：禁止抓取网络请求，返回离线来源失败；用于隔离测试，生产不要误开。
+- DISABLE_SCHEDULER=1：禁用后台调度；DEALS_SKIP_BOOT=1 保留显式跳过启动检查的兼容开关，正常生产不要设置。
+- NEXT_DIST_DIR：隔离构建输出，例如 .next-audit；构建和启动必须使用同一值。
+
+健康探测启用认证后必须带 Bearer；Compose 内部探针自动从环境取令牌，不输出它。不要直接执行会打印插值后令牌的 docker compose config；如需校验使用 config --quiet。JINA_API_KEY_FILE 需要在容器内单独只读挂载；读取失败只记录通用告警，不输出路径。密钥仍由用户通过安全渠道配置，不提供真实值示例。
+
+调度启动按最后完成轮次的 startedAt 计算剩余间隔，超期只补一次当前数据；独立 SQLite 租约阻止重复调度及同时刷新。暂停超过租约期的旧进程不得继续提交旧结果。租约不适用于多主机共享 SQLite。
+
+浏览器新键 perkradar-personal-v1 / perkradar-show-all-v1 自动兼容旧 daily-deals-*，不删除旧键。新页面内存状态在存储失败时仍可用，但不承诺刷新后保留；回退旧前端只读旧状态，不自动同步新前端后续收藏。
+
+令牌的设置方式：由维护者在终端安全生成随机值并导出为环境变量，或使用权限600且不提交的.env传入Compose；不要把值贴入聊天、URL或命令行参数。示例仅生成并赋值，不打印：
+
+```bash
+export PERKRADAR_ACCESS_TOKEN="$(openssl rand -hex 32)"
+```
+
+保持此值稳定以免每次重启使会话失效；通过安全的凭证管理方式保存，不要在公开终端执行 env/printenv。npm/Compose会从环境接收它，应用源码没有默认令牌。

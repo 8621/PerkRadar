@@ -30,6 +30,7 @@ src/app/demo/
 .mrdayone/
 *.md
 *.md.bak
-scripts/
+scripts/*
+!scripts/serve.mjs
 snapshots/
 .workbuddy/
