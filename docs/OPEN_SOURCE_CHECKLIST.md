@@ -57,7 +57,7 @@ README 首屏明确：定位是「多来源优惠线索聚合」，不是逐条�
 - `.github/workflows/ci.yml`：固定 Node 22 → `npm ci` → `npm test` → `npm run lint` → `npm run build` → `npm audit --omit=dev --registry=https://registry.npmjs.org`。
 - `.github/workflows/live-sources.yml`：`workflow_dispatch` + `schedule`（cron 用 UTC，`23 4 * * *` 即北京时间 12:23），单独运行、写临时 `DATA_DIR`、设 `DISABLE_SCHEDULER=1`，不进入 PR 必过项。
 - 三个 workflow 都声明 `permissions: contents: read`。
-- `.github/workflows/secret-scan.yml`：`checkout` 带 `fetch-depth: 0`，用 `gitleaks/gitleaks-action@v3` 扫描 push / PR / 每日定时的全部提交历史；发现凭据即让检查失败。
+- `.github/workflows/secret-scan.yml`：`checkout` 带 `fetch-depth: 0`，安装固定版本并校验 sha256 的 gitleaks CLI，扫描 push / PR / 每日定时的全部可达提交；发现凭据即让检查失败。不用 action 封装，避免它依赖 push 事件的 before/after SHA 在强推后失效。
 - `package.json` 声明 `engines.node >=22`，`.nvmrc` 为 22。Next 仍锁 15.5.29、ESLint 仍 9，没有升级大版本。
 
 依赖审计：生产依赖 `npm audit --omit=dev` 为 0 项；完整 `npm audit` 的告警全部在开发依赖里。CI 已显式指定官方 registry；本机默认 npm 镜像不支持 audit 端点，本地复查要手动加 `--registry=https://registry.npmjs.org`。测试项数以 `npm test` 输出为准，不写进文档。
