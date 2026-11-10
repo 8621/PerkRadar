@@ -1,3 +1,4 @@
+import { authFailure } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { GuardError, assertSameOrigin, assertSmallBody, clientIp, consumeManualAttempt } from "@/lib/guard";
 import { logEvent, logFailure } from "@/lib/log";
@@ -14,6 +15,8 @@ function json(body: unknown, status = 200, extra?: HeadersInit) {
 }
 
 export async function POST(request: Request) {
+  const denied = authFailure(request);
+  if (denied) return denied;
   try {
     assertSameOrigin(request.headers);
     assertSmallBody(request.headers);
