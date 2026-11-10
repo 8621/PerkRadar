@@ -250,3 +250,7 @@ SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` �
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。你可以自由使用、修改和商用，但需要保留版权与许可证声明。第三方依赖的许可义务见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。来源站点的内容和使用条件不由本仓库的 MIT 许可证覆盖。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=luobinger/PerkRadar&type=Date)](https://star-history.com/#luobinger/PerkRadar&Date)
