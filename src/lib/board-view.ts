@@ -1,10 +1,10 @@
-import { MAX_FEED_ITEMS, MAX_URL_CHARS, SUMMARY_MAX, TITLE_MAX } from "./config";
+import { BOARD_MAX_ITEMS, MAX_URL_CHARS, SUMMARY_MAX, TITLE_MAX } from "./config";
 import { CATEGORIES, type BoardState, type Category, type DealDTO, type FailureDTO, type FreshnessDTO, type SourceStatus } from "./types";
 
 /** 客户端边界校验：接口、SSR 快照和刷新结果都按不可信输入处理，坏字段不能让页面崩溃。 */
 // 与服务端入库边界保持一致：URL 2048 字、单轮最多 2000 条，异常响应也按同一上限截断。
 const URL_MAX = MAX_URL_CHARS;
-const LIST_MAX = MAX_FEED_ITEMS;
+const LIST_MAX = BOARD_MAX_ITEMS;
 // 北京时间标签约 16 字；来源名、ID 和错误说明留到 80 字足够，只是展示上限，不改数据库。
 const SHORT_MAX = 80;
 const ERROR_MAX = SUMMARY_MAX;
@@ -140,6 +140,7 @@ function normalizeSource(value: unknown): SourceStatus | null {
     lastInserted: nullableNumber(value.lastInserted),
     lastFinalUrl: safeHttpUrl(value.lastFinalUrl),
     quality: normalizeSourceQuality(value.quality),
+    diagnostic: ["missing_key", "rate_limited", "structure_anomaly", "circuit_open"].includes(String(value.diagnostic)) ? value.diagnostic as SourceStatus["diagnostic"] : null,
   };
 }
 
@@ -194,6 +195,10 @@ export function normalizeBoardState(input: unknown): BoardState | null {
     sources,
     deals,
     freshness: normalizeFreshness(input.freshness),
-    anomalies: stringList(input.anomalies, 20, 200),
+    anomalies: [...stringList(input.anomalies, 20, 200), ...(input.deals.length > LIST_MAX ? ["看板超过安全上限，请使用分页 API"] : [])],
+    pagination: isRecord(input.pagination) ? {
+      offset: count(input.pagination.offset), limit: count(input.pagination.limit),
+      total: count(input.pagination.total), hasMore: boolean(input.pagination.hasMore),
+    } : undefined,
   };
 }
