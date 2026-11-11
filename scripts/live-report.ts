@@ -3,7 +3,7 @@ import path from "node:path";
 import { probeExitCode } from "../src/lib/probe-outcome";
 import { runRefresh } from "../src/lib/refresh";
 
-/** 抓取真实来源并写入报告；退出码沿用来源探测规则。 */
+/** 抓取来源并写报告，沿用探测退出码；CommonJS 下把 await 放进函数，避免 tsx 拒绝顶层 await。 */
 async function main(): Promise<void> {
   const board = await runRefresh({ trigger: "schedule" });
   const summary = {
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   if (board.failures.length && !process.exitCode) console.warn("部分来源失败；请检查报告中的 warnings/failures");
 }
 
-main().catch((error: unknown) => {
+void main().catch((error: unknown) => {
   console.error(error);
   process.exitCode = 1;
 });
