@@ -22,13 +22,18 @@ jobs:
       contents: read
       actions: read
     env:
-      DATA_DIR: ${{ runner.temp }}/perkradar-pages-db
-      DEALS_SNAPSHOT_DIR: ${{ runner.temp }}/perkradar-raw-snapshot
-      SNAPSHOT_SITE_DIR: ${{ runner.temp }}/perkradar-pages
-      SNAPSHOT_PREVIOUS_FILE: ${{ runner.temp }}/perkradar-previous/latest.json
       DISABLE_SCHEDULER: '1'
     steps:
       - uses: actions/checkout@v4
+      # runner 上下文不能出现在 job 级 env。写入 GITHUB_ENV 后，后续步骤才能读到这些路径。
+      - name: Set snapshot directories
+        run: |
+          {
+            echo "DATA_DIR=${RUNNER_TEMP}/perkradar-pages-db"
+            echo "DEALS_SNAPSHOT_DIR=${RUNNER_TEMP}/perkradar-raw-snapshot"
+            echo "SNAPSHOT_SITE_DIR=${RUNNER_TEMP}/perkradar-pages"
+            echo "SNAPSHOT_PREVIOUS_FILE=${RUNNER_TEMP}/perkradar-previous/latest.json"
+          } >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
