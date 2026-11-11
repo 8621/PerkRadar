@@ -1,4 +1,5 @@
 import { fetchText, type FetchLike } from "./http";
+import { resilientSource } from "./source-resilience";
 import { logEvent } from "./log";
 import { parseEpicFreeGames } from "./parse/epic";
 import { parseFeed } from "./parse/feed";
@@ -7,7 +8,10 @@ import { SOURCE_DEFS, type SourceDef } from "./source-defs";
 import type { ParsedItem } from "./types";
 import { readFileSync } from "fs";
 
+let keyFileFailed = false;
+export function jinaMissingKey(): boolean { return keyFileFailed || (!process.env.JINA_API_KEY?.trim() && !process.env.JINA_API_KEY_FILE?.trim()); }
 function readJinaApiKey(): string {
+  keyFileFailed = false;
   const fromEnv = process.env.JINA_API_KEY?.trim();
   if (fromEnv) return fromEnv;
   const file = process.env.JINA_API_KEY_FILE?.trim();
@@ -15,6 +19,8 @@ function readJinaApiKey(): string {
   try {
     return readFileSync(file, "utf8").trim();
   } catch {
+    keyFileFailed = true;
+    logEvent("jina_key_file_unreadable", { warning: "无法读取密钥文件，匿名请求可能受限" });
     return "";
   }
 }
@@ -40,15 +46,16 @@ export async function loadSource(
   source: SourceDef,
   ctx: { fetchImpl: FetchLike; signal: AbortSignal; now: number },
 ): Promise<{ items: ParsedItem[]; finalUrl: string }> {
+  if (process.env.PERKRADAR_OFFLINE === "1") throw new Error("离线模式：未访问来源");
   const headers: Record<string, string> = { accept: "text/markdown" };
   const key = source.id === "linuxdo" ? readJinaApiKey() : "";
   if (key) headers.Authorization = `Bearer ${key}`;
-  const fetched = source.id === "linuxdo"
-    ? await fetchText(source.url, ctx, { headers })
-    : await fetchText(source.url, ctx);
+  const fetched = await resilientSource(source.id, () => source.id === "linuxdo"
+    ? fetchText(source.url, ctx, { headers })
+    : fetchText(source.url, ctx), ctx.signal);
   let items: ParsedItem[];
   if (source.id === "linuxdo") {
-    items = parseLinuxDoMarkdown(fetched.body);
+    items = parseLinuxDoMarkdown(fetched.body, ctx.now);
   } else if (source.id === "epic") {
     let payload: unknown;
     try {

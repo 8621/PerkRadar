@@ -31,7 +31,7 @@ export function assertSameOrigin(headers: Headers): void {
   }
   const origin = headers.get("origin");
   if (!origin) return;
-  const host = headers.get("x-forwarded-host") || headers.get("host");
+  const host = (process.env.TRUST_PROXY_HEADERS === "1" ? headers.get("x-forwarded-host") : null) || headers.get("host");
   if (!host) throw new GuardError("缺少主机信息", 403);
   let originHost = "";
   try {
@@ -54,6 +54,8 @@ export function consumeManualAttempt(
   limit = MANUAL_IP_LIMIT,
   windowMs = MANUAL_IP_WINDOW_MS,
 ): boolean {
+  for (const [key, stamps] of attempts) if (!stamps.some((stamp) => now - stamp < windowMs)) attempts.delete(key);
+  if (!attempts.has(ip) && attempts.size >= 10_000) return false;
   const recent = (attempts.get(ip) ?? []).filter((stamp) => now - stamp < windowMs);
   if (recent.length >= limit) {
     attempts.set(ip, recent);

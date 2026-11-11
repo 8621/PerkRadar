@@ -61,8 +61,26 @@ export function parseEpicFreeGames(payload: unknown, now: number): ParsedItem[] 
   const items: ParsedItem[] = [];
   const seen = new Set<string>();
   for (const raw of elements) {
-    if (!raw || typeof raw !== "object") continue;
+    if (!raw || typeof raw !== "object") throw new Error("Epic 商品列表结构异常");
     const element = raw as EpicElement;
+    if (!("promotions" in element) || typeof element.title !== "string" || !element.title.trim() ||
+        typeof element.price?.totalPrice?.discountPrice !== "number" ||
+        !Number.isFinite(element.price.totalPrice.discountPrice) ||
+        (element.promotions != null && (typeof element.promotions !== "object" ||
+          !Array.isArray(element.promotions.promotionalOffers)))) {
+      throw new Error("Epic 商品列表结构异常");
+    }
+    for (const group of element.promotions?.promotionalOffers ?? []) {
+      if (!group || !Array.isArray(group.promotionalOffers)) throw new Error("Epic 商品列表促销结构异常");
+      for (const offer of group.promotionalOffers) {
+        if (!offer || typeof offer.startDate !== "string" || typeof offer.endDate !== "string" ||
+            !Number.isFinite(Date.parse(offer.startDate)) || !Number.isFinite(Date.parse(offer.endDate)) ||
+            Date.parse(offer.endDate) <= Date.parse(offer.startDate) ||
+            typeof offer.discountSetting?.discountPercentage !== "number") {
+          throw new Error("Epic 商品列表促销结构异常");
+        }
+      }
+    }
     const discountPrice = element.price?.totalPrice?.discountPrice;
     if (typeof discountPrice !== "number" || discountPrice !== 0) continue;
     const active = currentOffers(element).filter((offer) => {
@@ -75,7 +93,7 @@ export function parseEpicFreeGames(payload: unknown, now: number): ParsedItem[] 
     if (active.length === 0) continue;
     const slug = pageSlug(element);
     const title = cleanTitle(element.title ?? "");
-    if (!slug || slug.includes("..") || !title) continue;
+    if (!slug || slug.includes("..") || !title || !/^[a-zA-Z0-9_/-]+$/.test(slug)) throw new Error("Epic 商品列表链接结构异常");
     const url = `https://store.epicgames.com/zh-CN/p/${slug}`;
     if (seen.has(url)) continue;
     seen.add(url);

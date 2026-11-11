@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { probeExitCode } from "../src/lib/probe-outcome";
 import { runRefresh } from "../src/lib/refresh";
 
 const board = await runRefresh({ trigger: "schedule" });
@@ -52,3 +53,6 @@ console.log(
     2,
   ),
 );
+
+process.exitCode = probeExitCode(board);
+if (board.failures.length && !process.exitCode) console.warn("部分来源失败；请检查报告中的 warnings/failures");

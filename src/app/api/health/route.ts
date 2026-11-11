@@ -1,3 +1,4 @@
+import { authFailure } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { getBoardState } from "@/lib/board";
 import { toHealthReport } from "@/lib/health";
@@ -6,7 +7,9 @@ import { logFailure } from "@/lib/log";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function GET() {
+export function GET(request: Request) {
+  const denied = authFailure(request);
+  if (denied) return denied;
   try {
     const report = toHealthReport(getBoardState());
     return NextResponse.json(report, { headers: { "cache-control": "no-store" } });

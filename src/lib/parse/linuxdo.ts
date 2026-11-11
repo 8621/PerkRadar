@@ -1,8 +1,10 @@
+import { MAX_FEED_ITEMS } from "../config";
+import { publishTime } from "../publish-time";
 import { cleanTitle } from "../text";
 import type { ParsedItem } from "../types";
 
 const DATE_PATTERN =
-  /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4}\b/;
+  /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4}\b/;
 
 /**
  * Jina returns Markdown, not RSS XML. Each item looks like:
@@ -10,11 +12,11 @@ const DATE_PATTERN =
  * then a repeated link line, then an RFC822 date.
  * There is no body summary in this feed, so summary stays empty.
  */
-export function parseLinuxDoMarkdown(markdown: string): ParsedItem[] {
+export function parseLinuxDoMarkdown(markdown: string, now = Date.now()): ParsedItem[] {
   if (!markdown.includes("linux.do/t/topic/")) {
     throw new Error("返回内容不是 LINUX DO 福利列表，可能被阻断");
   }
-  const chunks = markdown.split(/^### \[/m).slice(1);
+  const chunks = markdown.split(/^#{2,4} \[/m).slice(1, MAX_FEED_ITEMS + 1);
   const items: ParsedItem[] = [];
   for (const chunk of chunks) {
     const titleEnd = chunk.indexOf("](");
@@ -23,8 +25,7 @@ export function parseLinuxDoMarkdown(markdown: string): ParsedItem[] {
     const urlMatch = /^\]\((https?:\/\/linux\.do\/t\/topic\/\d+)\)/.exec(chunk.slice(titleEnd));
     const dateMatch = DATE_PATTERN.exec(chunk);
     if (!title || !urlMatch || !dateMatch) continue;
-    const publishedAt = Date.parse(dateMatch[0]);
-    if (!Number.isFinite(publishedAt)) continue;
+    const publishedAt = publishTime(dateMatch[0], now);
     items.push({
       url: urlMatch[1],
       title,

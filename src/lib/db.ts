@@ -51,8 +51,10 @@ export function openDatabase(filename: string): DatabaseSync {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
   }
   const db = new DatabaseSync(filename);
-  if (filename !== ":memory:") db.exec("PRAGMA journal_mode = WAL;");
+  // Set the wait first: switching to WAL and the schema statements below take a lock too,
+  // and without it they fail immediately when another process is mid-write.
   db.exec("PRAGMA busy_timeout = 5000;");
+  if (filename !== ":memory:") db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS deals (
       id INTEGER PRIMARY KEY,
@@ -94,7 +96,45 @@ export function openDatabase(filename: string): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_deals_source ON deals(source_id);
     CREATE INDEX IF NOT EXISTS idx_source_runs_round ON source_runs(round_id);
   `);
+  migrateDatabase(db);
   return db;
+}
+
+export function migrateDatabase(db: DatabaseSync): void {
+  const version = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  if (version > 1) { db.close(); throw new Error("数据库版本高于程序支持版本，拒绝降级"); }
+  if (version === 1) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_source_runs_source_round ON source_runs(source_id, round_id DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS idx_rounds_finished ON rounds(finished_at);
+      CREATE TABLE IF NOT EXISTS leases (name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);
+      PRAGMA user_version = 1;
+    `);
+    db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
+}
+
+export function acquireLease(name: string, owner: string, now: number, ttlMs: number): boolean {
+  const result = getDb().prepare(`INSERT INTO leases(name, owner, expires_at) VALUES (?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET owner=excluded.owner, expires_at=excluded.expires_at
+    WHERE leases.expires_at <= ? OR leases.owner = ?`).run(name, owner, now + ttlMs, now, owner);
+  return Number(result.changes) === 1;
+}
+export function renewLease(name: string, owner: string, now: number, ttlMs: number): boolean {
+  return Number(getDb().prepare("UPDATE leases SET expires_at=? WHERE name=? AND owner=? AND expires_at>?").run(now + ttlMs, name, owner, now).changes) === 1;
+}
+export function releaseLease(name: string, owner: string): void {
+  getDb().prepare("DELETE FROM leases WHERE name=? AND owner=?").run(name, owner);
+}
+/** Keep the latest completed round even after prolonged downtime. Never touch deals here. */
+export function pruneHistory(cutoff: number): void {
+  getDb().prepare(`DELETE FROM source_runs WHERE round_id IN
+    (SELECT id FROM rounds WHERE finished_at < ? AND status != 'running' AND id !=
+      (SELECT COALESCE(MAX(id),0) FROM rounds WHERE status != 'running'))`).run(cutoff);
+  getDb().prepare(`DELETE FROM rounds WHERE finished_at < ? AND status != 'running' AND id !=
+    (SELECT COALESCE(MAX(id),0) FROM rounds WHERE status != 'running')`).run(cutoff);
 }
 
 export function useDatabase(db: DatabaseSync | null): void {

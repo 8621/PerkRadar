@@ -16,3 +16,5 @@
 - 样本不含账号、邮箱、Cookie、请求头或凭证；原文链接保留，用于去重与规范化测试。
 - 公开可访问不等于可任意再分发。新增或更新样本前核查来源使用条件，见 [docs/SOURCES.md](../../docs/SOURCES.md) 与 [docs/OPEN_SOURCE_CHECKLIST.md](../../docs/OPEN_SOURCE_CHECKLIST.md)；能表达同样解析形状时，优先用 `tests/helpers.ts` 的 `SYNTHETIC` 生成器，而不是继续转载第三方正文。
 - 修改样本后必须重跑 `npm test`：解析断言与样本内容一一对应。
+
+`linuxdo-synthetic-variants.md` 是合成夹具：测试不同标题级别、单数字日期和不合理未来日期，不来自真实抓取。

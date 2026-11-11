@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Clock3,
   Info,
+  LogOut,
   Radar,
   RefreshCw,
   Search,
@@ -18,42 +19,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { AuthExpiredError, readBoard, expireBoard } from "@/lib/board-client";
+import { loadPersonal, loadShowAll, STORAGE_KEY, SHOW_ALL_KEY, LEGACY_STORAGE_KEY, LEGACY_SHOW_ALL_KEY, type Personal } from "@/lib/personal-storage";
 import { filterDeals, type DealSort } from "@/lib/filter-deals";
 import { normalizeBoardState } from "@/lib/board-view";
 import { CATEGORIES, type BoardState, type Category, type DealDTO, type SourceStatus } from "@/lib/types";
 import "./deal-board.css";
 
-// 运行标识保持不变：本机收藏和已领依赖这个键与 { claimed, favorites } 形状。
-const STORAGE_KEY = "daily-deals-personal-v1";
-
-type Personal = { claimed: string[]; favorites: string[] };
-type Alert = { text: string; role: "status" | "alert"; testId: string };
-
 const emptyPersonal: Personal = { claimed: [], favorites: [] };
-// 「查看全部线索」单独存，避免改动收藏键或 { claimed, favorites } 形状。
-const SHOW_ALL_KEY = "daily-deals-show-all-v1";
-
-function loadPersonal(): Personal {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyPersonal;
-    const parsed = JSON.parse(raw) as Partial<Personal>;
-    return {
-      claimed: Array.isArray(parsed.claimed) ? parsed.claimed.filter((item) => typeof item === "string") : [],
-      favorites: Array.isArray(parsed.favorites) ? parsed.favorites.filter((item) => typeof item === "string") : [],
-    };
-  } catch {
-    return emptyPersonal;
-  }
-}
-
-function loadShowAll(): boolean {
-  try {
-    return localStorage.getItem(SHOW_ALL_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+type Alert = { text: string; role: "status" | "alert"; testId: string };
 
 function readError(data: unknown): string | null {
   if (!data || typeof data !== "object" || !("error" in data)) return null;
@@ -72,7 +46,8 @@ function formatSourceQuality(source: SourceStatus): string {
 }
 
 function formatSourceOutcome(source: SourceStatus): string {
-  const quality = formatSourceQuality(source);
+  const diagnostic = source.diagnostic === "missing_key" ? "；未配置可用 Jina key，匿名请求可能受限" : source.diagnostic === "rate_limited" ? "；来源限流，正在退避" : source.diagnostic === "circuit_open" ? "；熔断等待恢复" : source.diagnostic === "structure_anomaly" ? "；上游结构异常" : "";
+  const quality = formatSourceQuality(source) + diagnostic;
   if (source.lastOk == null) return `尚未抓取${quality}`;
   if (source.lastOk) return `成功 ${source.lastFetched ?? 0} 条，新增 ${source.lastInserted ?? 0} 条${quality}`;
   return `失败（${source.lastError ?? "原因未记录"}），下一轮重试${quality}`;
@@ -82,15 +57,19 @@ function formatFailure(failure: { sourceName: string; error: string }): string {
   return `${failure.sourceName}（${failure.error}）`;
 }
 
-/** 正式首页：服务端给初始快照，客户端挂载后展开，保留真实数据和本机状态。 */
-export function DealBoard({ initial }: { initial: BoardState }) {
+/**
+ * 正式首页：服务端给初始快照，客户端挂载后展开，保留真实数据和本机状态。
+ * authEnabled 为真时显示「退出」，并在会话过期后把人送回登录页。
+ */
+export function DealBoard({ initial, authEnabled = false }: { initial: BoardState; authEnabled?: boolean }) {
   const [board, setBoard] = useState<BoardState>(() => normalizeBoardState(initial) ?? initial);
   const [query, setQuery] = useState("");
   const [sourceId, setSourceId] = useState<string | "all">("all");
   const [category, setCategory] = useState<Category | "all" | "favorites">("all");
   const [onlyNew, setOnlyNew] = useState(false);
-  // 默认隐藏「其他」；展示偏好单独存，不写入本机收藏状态。
-  const [showAllLeads, setShowAllLeads] = useState(false);
+  // 默认显示全部；尊重迁移后的偏好，搜索时不隐藏其他。
+  const [showAllLeads, setShowAllLeads] = useState(true);
+  const [displayLimit, setDisplayLimit] = useState(100);
   const [sort, setSort] = useState<DealSort>("newest");
   const [personal, setPersonal] = useState<Personal>(emptyPersonal);
   const [personalReady, setPersonalReady] = useState(false);
@@ -108,15 +87,17 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   }, [initial]);
 
   useEffect(() => {
-    setShowAllLeads(loadShowAll());
-    setPersonal(loadPersonal());
+    try {
+      setShowAllLeads(loadShowAll(localStorage));
+      setPersonal(loadPersonal(localStorage));
+    } catch { setStorageError("浏览器存储不可用，本次操作仅保留在当前页面。"); }
     setPersonalReady(true);
     // 另一个标签页改动本机状态后，重新读取，避免旧内存覆盖新值。
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== STORAGE_KEY && event.key !== SHOW_ALL_KEY) return;
-      if (event.key === null || event.key === SHOW_ALL_KEY) setShowAllLeads(loadShowAll());
+      if (event.key !== null && event.key !== STORAGE_KEY && event.key !== SHOW_ALL_KEY && event.key !== LEGACY_STORAGE_KEY && event.key !== LEGACY_SHOW_ALL_KEY) return;
+      if (event.key === null || (event.key === SHOW_ALL_KEY || event.key === LEGACY_SHOW_ALL_KEY)) setShowAllLeads(loadShowAll(localStorage));
       if (event.key !== SHOW_ALL_KEY) {
-        setPersonal(loadPersonal());
+        try { setPersonal((previous) => loadPersonal(localStorage, previous)); } catch { /* retain memory */ }
         setPersonalReady(true);
       }
     };
@@ -125,45 +106,37 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   }, []);
 
   useEffect(() => {
-    if (initial.lastUpdatedAt && !initial.refreshInProgress) return;
-    let cancelled = false;
-    let attempts = 0;
-    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    let inFlight: AbortController | null = null;
     const tick = async () => {
-      if (cancelled || attempts >= 15) return;
-      attempts += 1;
+      if (stopped || document.visibilityState === "hidden" || inFlight) return;
+      const controller = new AbortController();
+      inFlight = controller;
+      const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
-        const response = await fetch("/api/deals", { cache: "no-store" });
-        if (!response.ok) {
-          if (!cancelled) setPollError(true);
-        } else {
-          const data: unknown = await response.json().catch(() => null);
-          const safe = normalizeBoardState(data);
-          if (!safe) {
-            if (!cancelled) setPollError(true);
-          } else if (!cancelled) {
-            setBoard(safe);
-            setPollError(false);
-            if (safe.lastUpdatedAt && !safe.refreshInProgress) return;
-          }
-        }
-      } catch {
-        if (!cancelled) setPollError(true);
+        const next = await readBoard(controller.signal);
+        if (!stopped) { setBoard(next); setPollError(false); }
+      } catch (error) {
+        if (stopped) return;
+        // 会话过期后继续轮询只会一直 401；直接回登录页，收藏和已领在本机存储里不受影响。
+        if (error instanceof AuthExpiredError) { stopped = true; window.location.assign("/login"); return; }
+        setPollError(true);
       }
-      if (!cancelled) timer = setTimeout(tick, 2000);
+      finally { clearTimeout(timeout); inFlight = null; }
     };
-    timer = setTimeout(tick, 1200);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [initial]);
+    const onVisible = () => { if (document.visibilityState !== "hidden") void tick(); };
+    void tick();
+    const timer = setInterval(() => { setBoard((previous) => expireBoard(previous, Date.now())); void tick(); }, 30_000);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { stopped = true; inFlight?.abort(); clearInterval(timer); window.removeEventListener("focus", onVisible); document.removeEventListener("visibilitychange", onVisible); };
+  }, []);
 
   function savePersonal(next: Personal) {
+    setPersonal(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setStorageError(null);
-      setPersonal(next);
     } catch {
       // 隐私模式或配额满时，状态和存储必须显式说明不一致，而不是静默成功。
       setStorageError("收藏和已领没能写入这台浏览器（可能是隐私模式或存储已满），本次改动只在当前页面有效。");
@@ -180,7 +153,7 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   }
 
   function toggle(list: "claimed" | "favorites", canonicalUrl: string) {
-    const latest = loadPersonal();
+    const latest = personal;
     const current = new Set(latest[list]);
     if (current.has(canonicalUrl)) current.delete(canonicalUrl);
     else current.add(canonicalUrl);
@@ -191,8 +164,9 @@ export function DealBoard({ initial }: { initial: BoardState }) {
     setRefreshing(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/refresh", { method: "POST", cache: "no-store" });
+      const response = await fetch("/api/refresh", { method: "POST", cache: "no-store", signal: AbortSignal.timeout(35_000) });
       const data: unknown = await response.json().catch(() => null);
+      if (response.status === 401) { window.location.assign("/login"); return; }
       if (!response.ok) {
         setMessage(readError(data) || "刷新没有完成");
         return;
@@ -211,19 +185,28 @@ export function DealBoard({ initial }: { initial: BoardState }) {
     }
   }
 
+  async function signOut() {
+    try {
+      await fetch("/api/session", { method: "DELETE", cache: "no-store" });
+    } catch {
+      // 断网时 cookie 清不掉；仍然回登录页，会话最迟 8 小时后自行过期。
+    }
+    window.location.assign("/login");
+  }
+
   function resetFilters() {
     setSourceId("all");
     setCategory("all");
     setQuery("");
     setOnlyNew(false);
-    saveShowAll(false);
+    saveShowAll(true);
     setSort("newest");
   }
 
   const claimedSet = new Set(personal.claimed);
   const favoriteSet = new Set(personal.favorites);
   // 「其他」只在默认的「全部」视图隐藏；显式选分类或收藏时仍按用户选择展示。
-  const hideOther = !showAllLeads && category === "all";
+  const hideOther = !showAllLeads && category === "all" && !query.trim();
   const filters = { query, sourceId, category, onlyNew, sort, includeOther: !hideOther };
   const matching =
     category === "favorites" && !personalReady
@@ -247,6 +230,7 @@ export function DealBoard({ initial }: { initial: BoardState }) {
   ];
 
   const alerts: Alert[] = [];
+  if (board.freshness?.stale) alerts.push({ text: "数据已过时，请检查抓取状态。", role: "status", testId: "stale" });
   if (pollError) alerts.push({ text: "数据暂时不可用，显示的是上次成功读取的内容；恢复后会自动更新。", role: "status", testId: "poll-error" });
   if (storageError) alerts.push({ text: storageError, role: "alert", testId: "storage-error" });
   if (message) alerts.push({ text: message, role: "alert", testId: "refresh-message" });
@@ -282,6 +266,9 @@ export function DealBoard({ initial }: { initial: BoardState }) {
             <Button className="board-refresh" data-testid="refresh" onClick={refresh} disabled={busy} aria-busy={busy}>
               <RefreshCw aria-hidden="true" />{busy ? "刷新中" : "立即刷新"}
             </Button>
+            {authEnabled ? (
+              <Button variant="ghost" data-testid="sign-out" onClick={signOut}><LogOut aria-hidden="true" />退出</Button>
+            ) : null}
           </div>
         </header>
 
@@ -372,7 +359,7 @@ export function DealBoard({ initial }: { initial: BoardState }) {
             {waitingForFirst ? <p className="board-empty-note" role="status">正在进行首次抓取…</p> : null}
 
             <section className="demo-cards" aria-label="优惠列表" data-testid="cards">
-              {visible.map((deal) => (
+              {visible.slice(0, displayLimit).map((deal) => (
                 <DealCard
                   key={deal.canonicalUrl}
                   deal={deal}
@@ -384,6 +371,8 @@ export function DealBoard({ initial }: { initial: BoardState }) {
               ))}
             </section>
 
+            <p role="status" data-testid="display-range">显示 {Math.min(displayLimit, visible.length)} / {visible.length} 条匹配线索（已载入 {board.deals.length} 条）</p>
+            {visible.length > displayLimit ? <Button onClick={() => setDisplayLimit((value) => value + 100)}>再显示 100 条</Button> : null}
             {visible.length === 0 ? (
               <div className="demo-empty" data-testid="empty-state" role="status">
                 <Search aria-hidden="true" />
@@ -394,7 +383,7 @@ export function DealBoard({ initial }: { initial: BoardState }) {
             ) : null}
 
             <footer className="demo-footer" data-testid="footer">
-              <p className="board-footer-note">默认隐藏分类为「其他」的线索；打开「查看全部线索」可查看本轮抓到的全部条目。</p>
+              <p className="board-footer-note">默认显示全部分类；可取消「查看全部线索」来隐藏「其他」，搜索时始终包含其他分类。</p>
               <p className="board-footer-note">没有到期时间的条目，从发布时刻起保留 7 天；正好满 7 天仍保留，再早 1 毫秒淘汰。有到期时间的，到点即下架。</p>
               <p className="board-footer-note">本轮新增只包含最近一轮成功写入的新链接。某一来源失败时，不会改写它已经抓到的标题和时间。</p>
             </footer>
