@@ -304,9 +304,6 @@ SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` �
 
 <!-- star-history:start -->
 <a href="https://www.star-history.com/?repos=luobinger/PerkRadar&type=date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/star-history/star-history-dark.svg?v=c9a43e505762fbd9">
-    <img alt="luobinger/PerkRadar Star history" src="assets/star-history/star-history-light.svg?v=b9352484f69b67f5" width="800">
-  </picture>
+  <img alt="luobinger/PerkRadar Star history" src="assets/star-history/star-history-light.svg?v=b9352484f69b67f5" width="800">
 </a>
 <!-- star-history:end -->
