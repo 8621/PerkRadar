@@ -3,8 +3,7 @@ import path from "node:path";
 import { probeExitCode } from "../src/lib/probe-outcome";
 import { runRefresh } from "../src/lib/refresh";
 
-// This package is CommonJS, so tsx transforms the script with esbuild format "cjs".
-// Top-level await is rejected before the probe starts; keep the await inside main.
+/** 抓取来源并写报告，沿用探测退出码；CommonJS 下把 await 放进函数，避免 tsx 拒绝顶层 await。 */
 async function main(): Promise<void> {
   const board = await runRefresh({ trigger: "schedule" });
   const summary = {

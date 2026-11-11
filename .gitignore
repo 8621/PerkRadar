@@ -20,6 +20,7 @@
 
 # production
 /build
+/.snapshot-site/
 
 # misc
 .DS_Store

@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { buildSnapshot, writeDealSnapshot } from "../src/lib/snapshot";
+import { buildSnapshot, writeDealSnapshot, type DealSnapshot } from "../src/lib/snapshot";
+import { prepareSnapshotPublication, readPublicSnapshot } from "../src/lib/snapshot-publish";
 import { runRefresh } from "../src/lib/refresh";
 import type { BoardState } from "../src/lib/types";
 import { EMPTY_RSS, responseFor, useMemoryDb } from "./helpers";
@@ -53,6 +54,89 @@ function syntheticBoard(): BoardState {
     ],
   };
 }
+
+/** 本组使用合成公开数据，固定两小时轮次而不读取生产库。 */
+function publicationSnapshot(items?: DealSnapshot["items"]): DealSnapshot {
+  const board = syntheticBoard();
+  board.generatedAt = Date.parse("2026-11-11T08:00:00Z");
+  board.lastUpdatedAt = board.generatedAt;
+  board.lastUpdatedLabel = "2026-11-11 16:00";
+  const snapshot = buildSnapshot(board);
+  snapshot.sources = [{ ...snapshot.sources[0]!, ok: true }];
+  snapshot.sourceHealth = { ok: 1, total: 7 };
+  if (items) snapshot.items = items;
+  return snapshot;
+}
+
+describe("snapshot publication", () => {
+  it("does not label the initial baseline as new, but detects later URLs", () => {
+    const first = prepareSnapshotPublication(publicationSnapshot(), null).latest;
+    assert.equal(first.baselineAvailable, false);
+    assert.equal(first.newCount, 0);
+    const next = publicationSnapshot([...first.items, { ...first.items[0]!, url: "https://linux.do/t/topic/2" }]);
+    next.fetchedAt = "2026-11-11T10:00:00Z";
+    const published = prepareSnapshotPublication(next, first).latest;
+    assert.equal(published.newCount, 1);
+    assert.equal(published.items.find((item) => item.url.endsWith("/2"))?.isNew, true);
+  });
+
+  it("retains failed-source and rolled-off feed items without renewing their first-seen time", () => {
+    const first = publicationSnapshot();
+    first.items.push({ ...first.items[0]!, sourceId: "v2ex", sourceName: "V2EX推广", url: "https://www.v2ex.com/t/1", publishedAt: null });
+    const baseline = prepareSnapshotPublication(first, null).latest;
+    const next = publicationSnapshot([]);
+    next.fetchedAt = "2026-11-11T10:00:00Z";
+    const published = prepareSnapshotPublication(next, baseline).latest;
+    assert.equal(published.items.length, 2);
+    assert.equal(published.items.find((item) => item.sourceId === "v2ex")?.firstSeenAt, first.fetchedAt);
+    assert.equal(published.newCount, 0);
+    const later = { ...next, fetchedAt: "2026-11-18T08:00:00.001Z" };
+    assert.equal(prepareSnapshotPublication(later, published).latest.items.length, 0);
+  });
+
+  it("does not revive an old item when the feed omits its previously known publication time", () => {
+    const previous = publicationSnapshot();
+    previous.items[0] = {
+      ...previous.items[0]!,
+      sourceId: "v2ex",
+      sourceName: "V2EX推广",
+      url: "https://www.v2ex.com/t/1",
+      publishedAt: "2026-11-04T09:00:00Z",
+      firstSeenAt: previous.fetchedAt,
+    };
+    const current = publicationSnapshot([{ ...previous.items[0]!, publishedAt: null, publishedAtBeijing: null }]);
+    current.fetchedAt = "2026-11-11T10:00:00Z";
+    assert.equal(prepareSnapshotPublication(current, previous).latest.items.length, 0);
+  });
+
+  it("keeps the original snapshot and time on total failure and rejects a failed initial publication", () => {
+    const baseline = prepareSnapshotPublication(publicationSnapshot(), null).latest;
+    const failed = { ...publicationSnapshot([]), fetchedAt: "2026-11-11T10:00:00Z", sourceHealth: { ok: 0, total: 7 }, roundStatus: "failed" as const };
+    const published = prepareSnapshotPublication(failed, baseline);
+    assert.deepEqual(published.latest, baseline);
+    assert.equal(published.status.attemptedAt, failed.fetchedAt);
+    assert.equal(published.status.retainedPrevious, true);
+    assert.throws(() => prepareSnapshotPublication(failed, null), /没有有效历史/);
+  });
+
+  it("removes expired entries and withdraws old Epic entries after a successful empty Epic response", () => {
+    const first = publicationSnapshot();
+    first.items.push({ ...first.items[0]!, sourceId: "epic", sourceName: "Epic", url: "https://store.epicgames.com/zh-CN/p/synthetic" });
+    const next = publicationSnapshot([]);
+    next.sources.push({ id: "epic", name: "Epic", ok: true, fetched: 0, inserted: 0, error: null, finalUrl: null });
+    assert.equal(prepareSnapshotPublication(next, first).latest.items.some((item) => item.sourceId === "epic"), false);
+    next.fetchedAt = "2026-11-12T16:00:00Z";
+    assert.equal(prepareSnapshotPublication(next, first).latest.items.length, 0);
+  });
+
+  it("refuses damaged or offsite snapshots rather than treating them as an empty baseline", () => {
+    assert.equal(readPublicSnapshot({ items: [] }), null);
+    const bad = publicationSnapshot();
+    bad.items[0]!.url = "https://example.com/wrong-source";
+    assert.equal(readPublicSnapshot(bad), null);
+    assert.throws(() => prepareSnapshotPublication(publicationSnapshot(), bad), /上一轮快照/);
+  });
+});
 
 describe("public snapshot", () => {
   it("keeps SYNTHETIC titles and urls and drops private fields", () => {

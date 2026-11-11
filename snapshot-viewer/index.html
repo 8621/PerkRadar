@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>PerkRadar · 公开快照</title>
+  <link rel="stylesheet" href="./deal-board.css">
+  <link rel="stylesheet" href="./snapshot-viewer/styles.css">
+  <script type="module" src="./snapshot-viewer/viewer.js"></script>
+</head>
+<body class="perk-board">
+  <div id="snapshot-app" class="snapshot-shell">
+    <header class="snapshot-header">
+      <a class="snapshot-brand" href="./">PerkRadar<span>公开快照</span></a>
+      <span class="snapshot-edition">只读数据 · 本地收藏</span>
+    </header>
+    <div class="snapshot-layout">
+      <aside class="snapshot-sidebar" aria-label="筛选线索">
+        <div class="snapshot-sidebar-heading"><h2>筛选</h2><button id="reset" class="snapshot-text-button" type="button">重置</button></div>
+        <label class="snapshot-field" for="q">标题搜索<input id="q" type="search" placeholder="搜索标题关键词" autocomplete="off" maxlength="300"></label>
+        <label class="snapshot-field" for="source">来源<select id="source"><option value="all">全部来源</option></select></label>
+        <label class="snapshot-field" for="cat">分类<select id="cat"><option value="all">全部分类</option></select></label>
+        <label class="snapshot-check"><input id="onlyFav" type="checkbox">只看收藏</label>
+        <label class="snapshot-check"><input id="showAll" type="checkbox">查看全部线索（含其他）</label>
+        <p class="snapshot-sidebar-note">默认隐藏「其他」分类，可开启查看全部。收藏与已领仅保存在当前浏览器。</p>
+      </aside>
+      <main class="snapshot-main">
+        <section class="snapshot-status" aria-label="抓取状态">
+          <div class="snapshot-status-heading"><h1>优惠线索</h1><button id="retry" class="snapshot-button" type="button">重新读取快照</button></div>
+          <p id="meta" role="status" aria-live="polite">正在读取公开快照…</p>
+          <p id="warning" class="snapshot-warning" role="status" hidden></p>
+          <p id="storage-warning" class="snapshot-warning" role="status" hidden></p>
+          <details id="failure-details" hidden><summary id="failure-summary">来源失败详情</summary><ul id="failures"></ul></details>
+        </section>
+        <div class="snapshot-results-heading">
+          <span id="count" aria-live="polite">正在加载…</span>
+          <label class="snapshot-new-toggle"><input id="onlyNew" type="checkbox"><span class="snapshot-switch" aria-hidden="true"></span>只看本轮新增</label>
+        </div>
+        <div id="list" class="snapshot-list" aria-busy="true"><div class="snapshot-empty">正在加载线索…</div></div>
+      </main>
+    </div>
+    <footer class="snapshot-footer">公开来源标题经规则分类，未经逐条核实。领取条件与截止时间请以原文和活动官方说明为准。</footer>
+    <noscript><p class="snapshot-empty">请启用 JavaScript 后查看快照。</p></noscript>
+  </div>
+</body>
+</html>

@@ -56,6 +56,16 @@ npm run start
 
 Docker 的构建和启停见 [OPERATIONS.md](OPERATIONS.md)。
 
+### 静态快照查看器
+
+`npm run build:snapshot` 使用项目已安装的 TypeScript，将 `snapshot-viewer/` 和它引用的共享浏览器逻辑编译到 `.snapshot-site/`；也可通过 `SNAPSHOT_SITE_DIR` 指定产物目录。它复用 `filterDeals` 和个人状态存储，浏览器不依赖 Node 服务。
+
+定时发布流程为 `report` → `write-snapshot.ts` → `snapshot:prepare` → `build:snapshot` → Pages。前两步通过 `DATA_DIR` / `DEALS_SNAPSHOT_DIR` 只写 runner 临时目录；`snapshot:prepare` 需要 `DEALS_SNAPSHOT_DIR` 和 `SNAPSHOT_SITE_DIR`，可选 `SNAPSHOT_PREVIOUS_FILE` 指向上一轮公开快照。它输出 `latest.json`、`previous.json` 和 `status.json`，校验失败时退出非零，首次全失败也停止发布。
+
+`src/lib/snapshot-publish.ts` 合并仍在架的历史条目，并保留无发布时间条目的 `firstSeenAt`；Epic 成功响应中的免费集合以本轮为准。全失败时 `latest.json` 原样保留，`status.json` 记录本轮尝试与 `retainedPrevious`。`baselineAvailable` 区分首轮和有效空基线。工作流只恢复上次整条发布流程成功的 artifact，避免部署失败的未公开轮次成为新增基线；定时发布串行执行。
+
+浏览器验收包括首轮无新增、英文大小写搜索、来源/分类/收藏组合、存储损坏与配额故障、跨截止时间移除、全失败保留历史提示、轮询失败保留列表和手动重读。离线回归在 `tests/snapshot.test.ts` 与 `tests/snapshot-viewer.test.ts`，CI 同时构建静态查看器。GitHub Pages 的首次启用方式见 README。
+
 ## 开发进程和生产进程
 
 两边都由 `src/instrumentation.ts` 在 Node 运行时调用 `startScheduler()`。构建阶段会跳过：`NEXT_PHASE=phase-production-build` 或 `npm_lifecycle_event=build`。`DISABLE_SCHEDULER=1` 会完全不调度。

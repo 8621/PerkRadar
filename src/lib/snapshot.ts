@@ -14,6 +14,8 @@ export type DealSnapshotItem = {
   expiresAt: string | null;
   expiresAtBeijing: string | null;
   isNew: boolean;
+  /** 静态发布连续轮次使用的首次观测时间；旧版快照可省略。 */
+  firstSeenAt?: string;
 };
 
 export type DealSnapshot = {

@@ -12,7 +12,9 @@
     "start": "node scripts/serve.mjs start",
     "lint": "eslint",
     "test": "node --import tsx --test tests/*.test.ts",
-    "report": "node --import tsx scripts/live-report.ts"
+    "report": "node --import tsx scripts/live-report.ts",
+    "snapshot:prepare": "node --import tsx scripts/prepare-snapshot-pages.ts",
+    "build:snapshot": "node scripts/build-snapshot-viewer.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
