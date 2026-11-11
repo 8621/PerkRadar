@@ -2,6 +2,8 @@
 .gitignore
 node_modules
 .next
+.next-audit
+.snapshot-site
 out
 data
 reports

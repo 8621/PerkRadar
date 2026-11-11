@@ -36,6 +36,8 @@ jobs:
         run: npx tsc --noEmit --incremental false
       - name: Production build
         run: npm run build
+      - name: Static snapshot viewer build
+        run: npm run build:snapshot
       # Some npm mirrors do not implement the audit endpoint. Pin the official
       # registry so this step fails on real advisories, not on a mirror error.
       - name: Production dependency audit

@@ -1,0 +1,127 @@
+name: Snapshot to Pages
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub cron 使用 UTC，与应用两小时抓取间隔一致。
+    - cron: '23 */2 * * *'
+
+concurrency:
+  group: snapshot-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      DATA_DIR: ${{ runner.temp }}/perkradar-pages-db
+      DEALS_SNAPSHOT_DIR: ${{ runner.temp }}/perkradar-raw-snapshot
+      SNAPSHOT_SITE_DIR: ${{ runner.temp }}/perkradar-pages
+      SNAPSHOT_PREVIOUS_FILE: ${{ runner.temp }}/perkradar-previous/latest.json
+      DISABLE_SCHEDULER: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify before publication
+        run: |
+          npm test
+          npm run lint
+          npx tsc --noEmit --incremental false
+          npm run build
+          npm audit --omit=dev --registry=https://registry.npmjs.org
+
+      - name: Find the last successfully published snapshot
+        id: baseline
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let runs;
+            try {
+              runs = await github.rest.actions.listWorkflowRuns({
+                ...context.repo,
+                workflow_id: 'snapshot-pages.yml',
+                branch: context.payload.repository.default_branch,
+                status: 'success',
+                per_page: 30,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              return;
+            }
+            for (const run of runs.data.workflow_runs) {
+              const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+                ...context.repo, run_id: run.id,
+              });
+              if (artifacts.data.artifacts.some(a => a.name === 'perkradar-snapshot-state' && !a.expired)) {
+                core.setOutput('run-id', String(run.id));
+                return;
+              }
+            }
+      - name: Restore the public baseline
+        if: steps.baseline.outputs.run-id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: perkradar-snapshot-state
+          path: ${{ runner.temp }}/perkradar-previous
+          run-id: ${{ steps.baseline.outputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch sources into an isolated database
+        id: fetch
+        # 全失败仍需生成 status.json；后续准备步骤决定能否保留并发布历史。
+        continue-on-error: true
+        env:
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+        run: npm run report
+      - name: Export this round
+        run: |
+          test -s reports/live-fetch-summary.json
+          node --import tsx scripts/write-snapshot.ts
+      - name: Prepare public snapshot and failure status
+        run: npm run snapshot:prepare
+      - name: Build the static viewer
+        run: npm run build:snapshot
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/perkradar-pages
+      - name: Keep the next public baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: perkradar-snapshot-state
+          path: ${{ runner.temp }}/perkradar-pages/latest.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Upload source diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-source-report
+          path: reports/live-fetch-summary.json
+          if-no-files-found: warn
+
+  deploy:
+    needs: snapshot
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
