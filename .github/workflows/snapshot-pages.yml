@@ -21,8 +21,10 @@ jobs:
     permissions:
       contents: read
       actions: read
-    env:
-      DISABLE_SCHEDULER: '1'
+    # 注意：不要在这里设 DISABLE_SCHEDULER='1'。startScheduler() 见到它会直接
+    # 返回，导致“Verify before publication”里的 scheduler 测试 4 项全挂
+    #（期望跑 1 次、实际 0 次），工作流还没抓数据就失败。只在真正抓取
+    # 的步骤里单独设，测试步骤不受影响。
     steps:
       - uses: actions/checkout@v4
       # runner 上下文不能出现在 job 级 env。写入 GITHUB_ENV 后，后续步骤才能读到这些路径。
@@ -89,6 +91,7 @@ jobs:
         continue-on-error: true
         env:
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          DISABLE_SCHEDULER: '1'
         run: npm run report
       - name: Export this round
         run: |
