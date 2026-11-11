@@ -1,0 +1,96 @@
+name: Update star history
+
+on:
+  watch:
+    types: [started]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/star-history.yml'
+      - 'scripts/update-star-history.mjs'
+      - 'tests/star-history.test.ts'
+      - 'assets/star-history/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/star-history.yml'
+      - 'scripts/update-star-history.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: star-history-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.repository == 'luobinger/PerkRadar' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+      # 固定渲染器源码版本，在其目录安装，避免 npm --prefix 识别到主项目。
+      - name: Check out pinned renderer
+        uses: actions/checkout@v4
+        with:
+          repository: keeptinkering/star-history-action
+          ref: 40684de767f6f524052941ff59b91ab5b0c8d4f1
+          path: .star-history-tool
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install renderer dependencies
+        working-directory: .star-history-tool/renderer
+        run: npm ci --workspaces=false --no-audit --no-fund
+      # 上游把 404 或空列表都当作零 Star；只有确认总数为零才允许该后备结果。
+      - name: Reject incomplete GitHub data
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.star-history-tool/renderer/vendor/shared/common/chart.tsx')
+          source = path.read_text()
+          old = 'if (status === 404 || status === 501) {'
+          new = 'if (status === 501 && await api.getRepoStargazersCount(repo, token) === 0) {'
+          if source.count(old) != 1:
+              raise SystemExit('Pinned renderer fallback changed; refusing to render.')
+          path.write_text(source.replace(old, new))
+          PY
+      # 凭据仅交给本地渲染器请求 GitHub，不发送到第三方图表服务。
+      - name: Render current star data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOS: ${{ github.repository }}
+          OUTPUT_DIR: assets/star-history
+          TYPE: Date
+          THEMES: light,dark
+          WIDTH: '800'
+          ACTION_PATH: ${{ github.workspace }}/.star-history-tool
+        run: bash .star-history-tool/scripts/render-charts.sh
+      - name: Version README image URLs
+        run: node scripts/update-star-history.mjs
+      - name: Publish changed chart
+        if: github.event_name != 'pull_request'
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          git add -- README.md assets/star-history/star-history-light.svg assets/star-history/star-history-dark.svg assets/star-history/star-history.png assets/star-history/.star-history.sig
+          if git diff --cached --quiet; then
+            echo 'Star history unchanged.'
+            exit 0
+          fi
+          git commit -m 'chore(docs): refresh star history' -m 'Co-authored-by: Mr. Day One <noreply@mrday.one>'
+          # If main advanced, fail rather than overwrite concurrent changes;
+          # the next event or scheduled run starts again from current main.
+          git push origin HEAD:main

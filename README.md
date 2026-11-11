@@ -27,8 +27,6 @@ git clone https://github.com/luobinger/PerkRadar.git
 cd PerkRadar
 ```
 
-已有部署请先阅读[升级说明](#运行状态与升级)，备份数据库并停止旧实例，再启动新版。
-
 ### 用 Docker 运行
 
 此命令构建生产镜像并启动容器，SQLite 数据保存在宿主机的 `./data`。容器以非 root 的 `node` 用户（uid 1000）运行，宿主数据目录须允许该用户写入；权限设置见[运维文档](docs/OPERATIONS.md)。
@@ -304,10 +302,11 @@ SQLite 位于 `./data/deals.db`，WAL 模式下还可能存在 `deals.db-wal` �
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=luobinger/PerkRadar&type=Date)](https://star-history.com/#luobinger/PerkRadar&Date)
-
-## 运行状态与升级
-
-数据库使用 `PRAGMA user_version` 管理版本。首次从旧库升级到版本 1 时，在事务中增加索引和租约表，不重写已有优惠条目；程序拒绝打开版本高于 1 的数据库。每轮刷新提交时清理 30 天前已结束的抓取轮次及对应来源记录，始终保留最近一个已结束轮次；这项历史清理不删除 `deals`，条目另按来源留存与到期规则处理。
-
-**升级前先做一致性备份并保留旧镜像。** 从使用 `daily-free-info` 的旧部署升级时，应按[运维文档](docs/OPERATIONS.md)先停止旧实例，再启动 `perkradar`；新旧实例不能同时使用同一 `./data`。需要回滚时使用升级前的备份和镜像。更新源码后仍需重新构建并启动容器，运行中的镜像不会随 GitHub 更新而自动替换。
+<!-- star-history:start -->
+<a href="https://www.star-history.com/?repos=luobinger/PerkRadar&type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/star-history/star-history-dark.svg?v=f49071f44100bc0c">
+    <img alt="luobinger/PerkRadar Star history" src="assets/star-history/star-history-light.svg?v=8e8aed0d0d9acf7e" width="800">
+  </picture>
+</a>
+<!-- star-history:end -->
