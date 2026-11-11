@@ -34,6 +34,7 @@ describe("Star History update CLI", () => {
       const first = readFileSync(join(root, "README.md"), "utf8");
       const light = readFileSync(join(chart, "star-history-light.svg"), "utf8");
       assert.match(first, /star-history-light\.svg\?v=[a-f0-9]{16}/);
+      assert.doesNotMatch(first, /prefers-color-scheme|star-history-dark\.svg|<picture>/);
       assert.match(first, /synthetic\/chart Star history/);
       assert.ok(first.startsWith("# SYNTHETIC\n"));
       assert.ok(first.endsWith("Keep this paragraph.\n"));

@@ -46,10 +46,7 @@ async function updateChart() {
   const block = [
     START,
     `<a href="https://www.star-history.com/?repos=${repo}&type=date">`,
-    "  <picture>",
-    `    <source media="(prefers-color-scheme: dark)" srcset="${dark.path}?v=${dark.version}">`,
-    `    <img alt="${repo} Star history" src="${light.path}?v=${light.version}" width="800">`,
-    "  </picture>",
+    `  <img alt="${repo} Star history" src="${light.path}?v=${light.version}" width="800">`,
     "</a>",
     END,
   ].join("\n");
